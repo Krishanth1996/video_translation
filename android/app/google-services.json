@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "560091573927",
+    "project_id": "videotranslate-36e2f",
+    "storage_bucket": "videotranslate-36e2f.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:560091573927:android:fe97d3ad9c07c5d8b03582",
+        "android_client_info": {
+          "package_name": "com.kelaxa.video_subtitle_translator"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "560091573927-3h3po7n1b3i11o5d3dr097vo0c5i4u7k.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.kelaxa.video_subtitle_translator",
+            "certificate_hash": "bc8edea41c16ce6b139dce0c263bbb38511c78c4"
+          }
+        },
+        {
+          "client_id": "560091573927-857lttak34mcu982val2e9uu49602cl5.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBGEUnOd6MoPWMpnLoNsxrkCCnvChkJI90"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "560091573927-857lttak34mcu982val2e9uu49602cl5.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
