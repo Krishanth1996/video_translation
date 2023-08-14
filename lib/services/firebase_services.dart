@@ -125,7 +125,7 @@ class AuthService {
 
       if (AuthService().isUserLoggedIn()) {
         // Navigate to home screen
-        WidgetsBinding.instance!.addPostFrameCallback((_) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
           Get.offAll(const Home());
         });
       }
@@ -204,6 +204,7 @@ class AuthService {
       User? user = userCredential.user;
       if (user != null) {
         await _prefs?.setString('uid', user.uid);
+        Get.to(Home());
       }
     } catch (error) {
       print("Error submitting OTP: $error");

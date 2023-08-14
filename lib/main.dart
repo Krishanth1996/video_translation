@@ -4,6 +4,8 @@ import 'package:get/get.dart';
 import 'package:video_subtitle_translator/firebase_options.dart';
 import 'package:video_subtitle_translator/login.dart';
 
+import 'home.dart';
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
@@ -17,9 +19,16 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const GetMaterialApp(
+    if(authService.isUserLoggedIn()){
+      return const GetMaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: Home(),
+    );
+    } else{
+      return const GetMaterialApp(
       debugShowCheckedModeBanner: false,
       home: Login(),
     );
+    }
   }
 }
