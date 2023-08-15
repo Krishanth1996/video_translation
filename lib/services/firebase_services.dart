@@ -64,7 +64,8 @@ import 'package:get/get.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_subtitle_translator/home.dart';
-import 'package:video_subtitle_translator/otp_scree.dart';
+import 'package:video_subtitle_translator/login.dart';
+import 'package:video_subtitle_translator/otp_screen.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -118,6 +119,7 @@ class AuthService {
         await _prefs?.setString('displayName', user.displayName ?? '');
         await _prefs?.setString('email', user.email ?? '');
         await _prefs?.setString('uid', user.uid);
+        await _prefs?.setString('phoneNo', user.phoneNumber ?? '');
         Get.offAll(const Home());
       }
       print(user?.displayName);
@@ -149,6 +151,7 @@ class AuthService {
       await _prefs?.remove('displayName');
       await _prefs?.remove('email');
       await _prefs?.remove('uid');
+      await _prefs?.remove('phoneNo');
 
       print("User signed out successfully.");
     } catch (error) {
@@ -169,6 +172,10 @@ class AuthService {
     return _prefs?.getString('uid') ?? '';
   }
 
+  Future<String> getPhoneNo() async {
+    return _prefs?.getString('phoneNumber') ?? '';
+  }
+
   Future<void> verifyPhoneNumber(String phoneNumber) async {
     try {
       await _auth.verifyPhoneNumber(
@@ -178,10 +185,11 @@ class AuthService {
         },
         verificationFailed: (FirebaseAuthException e) {
           print("Verification Failed: ${e.message}");
+          Get.snackbar('Error', "Verification Failed: ${e.message}");
         },
         codeSent: (String verificationId, int? resendToken) {
-          verificationId = verificationId;
-          Get.to(OTPVerificationScreen(phoneNumber,verificationId));
+          this.verificationId = verificationId;
+          Get.to(OTPVerificationScreen(phoneNumber, verificationId));
           // Get.to(OTPVerificationScreen(verificationId));
         },
         codeAutoRetrievalTimeout: (String verificationId) {
@@ -204,9 +212,14 @@ class AuthService {
       User? user = userCredential.user;
       if (user != null) {
         await _prefs?.setString('uid', user.uid);
+        await _prefs?.setString('email', user.email ?? '');
+        await _prefs?.setString('displayName', user.displayName ?? '');
+        await _prefs?.setString('phoneNumber', user.phoneNumber ?? '');
       }
+      Get.to(Home());
     } catch (error) {
       print("Error submitting OTP: $error");
+      Get.to(const Login());
     }
   }
 }

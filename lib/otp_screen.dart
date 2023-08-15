@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:get/get.dart';
 import 'package:pinput/pinput.dart';
 import 'package:video_subtitle_translator/home.dart';
+import 'package:video_subtitle_translator/services/firebase_services.dart';
 import 'colors.dart';
 import 'constants.dart';
 
@@ -10,14 +11,14 @@ class OTPVerificationScreen extends StatefulWidget {
   final String verificationId;
   final String phoneNo;
 
-  const OTPVerificationScreen(this.phoneNo,this.verificationId, {super.key});
+  const OTPVerificationScreen(this.phoneNo, this.verificationId, {super.key});
 
   @override
   State<OTPVerificationScreen> createState() => _OTPVerificationScreenState();
 }
 
 class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
-  final TextEditingController otpController = TextEditingController();
+  TextEditingController otpController = TextEditingController();
   final FirebaseAuth auth = FirebaseAuth.instance;
   String otpNumber = "";
   bool isLoading = false;
@@ -33,8 +34,8 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
         centerTitle: true,
         title: const Text("OTP Verification"),
       ),
-      body: Stack(
-        children:[Container(
+      body: Stack(children: [
+        Container(
           padding: const EdgeInsets.all(8),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -53,34 +54,28 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
                 style: const TextStyle(fontSize: 15),
               ),
               const SizedBox(height: 60),
-              const Pinput(
+              Pinput(
                 length: 6,
+                controller: otpController,
               ),
               const SizedBox(height: 50),
               ElevatedButton(
                 onPressed: () async {
-                  // setState(() {
-                  //   isLoading = true;
-                  // });
-                  // AuthService authService = AuthService();
-                  // await authService.initAuthService();
-      
-                  authService.submitOTP(otpNumber);
-                  Get.to(const Home());
-                  // User? user = await AuthService().submitOTP(otpNumber);
-      
-                  // setState(() {
-                  //   isLoading = false; // Stop loading
-                  //     if (user != null) {
-                  //       showOverlay = true; // Show the overlay
-                  //     Future.delayed(const Duration(seconds: 2), () {
-                  //       setState(() {
-                  //         showOverlay = false;
-                  //       });
-                  //       Get.to(const Home());
-                  //       });
-                  //     }
-                  // });
+                  setState(() {
+                    isLoading = true;
+                  });
+                  authService.submitOTP(otpController.text.trim());
+                  setState(() {
+                    isLoading = false;
+                    showOverlay = true;
+                    Future.delayed(const Duration(seconds: 10), () {
+                      setState(() {
+                        showOverlay = false;
+                      });
+                      //  Get.to(const Home());
+                     });
+                  });
+                  print(otpController.text.trim());
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: primaryColor,
@@ -97,36 +92,36 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
           ),
         ),
         if (isLoading) // Show the loading indicator conditionally
-              Container(
-                color: Colors.black54,
-                child: const Center(
-                  child: CircularProgressIndicator(),
-                ),
-              ),
-            if (showOverlay)
-              Center(
-                child: Container(
-                  color: Colors.black54,
-                  child: Center(
-                    child: Align(
-                      alignment: Alignment.bottomCenter,
-                      child: Container(
-                        margin: const EdgeInsets.only(bottom: 20),
-                        width: width,
-                        color: Colors.white,
-                        child: const Padding(
-                          padding: EdgeInsets.all(14.0),
-                          child: Text(
-                            signInSuccessMsg,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: Colors.green, fontSize: 15),
-                          ),
-                        ),
+          Container(
+            color: Colors.black54,
+            child: const Center(
+              child: CircularProgressIndicator(),
+            ),
+          ),
+        if (showOverlay)
+          Center(
+            child: Container(
+              color: Colors.black54,
+              child: Center(
+                child: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 20),
+                    width: width,
+                    color: Colors.white,
+                    child: const Padding(
+                      padding: EdgeInsets.all(14.0),
+                      child: Text(
+                        signInSuccessMsg,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.green, fontSize: 15),
                       ),
                     ),
                   ),
                 ),
               ),
+            ),
+          ),
       ]),
     );
   }

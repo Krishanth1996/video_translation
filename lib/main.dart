@@ -2,6 +2,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:video_subtitle_translator/firebase_options.dart';
+import 'package:video_subtitle_translator/home.dart';
 import 'package:video_subtitle_translator/login.dart';
 
 Future<void> main() async {
@@ -17,9 +18,20 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const GetMaterialApp(
+    // return const GetMaterialApp(
+    //   debugShowCheckedModeBanner: false,
+    //   home: Login(),
+    // );
+    if(authService.isUserLoggedIn()){
+      return const GetMaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: Home(),
+    );
+    } else{
+      return const GetMaterialApp(
       debugShowCheckedModeBanner: false,
       home: Login(),
     );
+    }
   }
 }

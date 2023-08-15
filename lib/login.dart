@@ -16,8 +16,10 @@ class Login extends StatefulWidget {
 class _LoginState extends State<Login> {
   bool passwordVisible = true;
   bool isLoading = false;
+  bool isLoading1 = false;
   bool showOverlay = false;
   String phoneNumber = "";
+  TextEditingController phoneNoController = TextEditingController();
 
   @override
   Widget build(BuildContext context) {
@@ -51,7 +53,8 @@ class _LoginState extends State<Login> {
                       height: height / 1.25,
                     ),
                     TextFormField(
-                      keyboardType: TextInputType.number,
+                      controller: phoneNoController,
+                      keyboardType: TextInputType.phone,
                       onChanged: (value) {
                         setState(() {
                           phoneNumber = value;
@@ -75,13 +78,22 @@ class _LoginState extends State<Login> {
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(
                           backgroundColor: primaryColor,
-                          shape: const RoundedRectangleBorder(
-                              borderRadius:
-                                  BorderRadius.all(Radius.circular(20))),
+                          shape: const RoundedRectangleBorder(borderRadius:BorderRadius.all(Radius.circular(20))),
                           padding: const EdgeInsets.all(15)),
-                      onPressed: ()  async{
-                        authService.verifyPhoneNumber(phoneNumber);
-                      },
+                      onPressed:
+                           () async {
+                              setState(() {
+                                isLoading1 = true;
+                              });
+                              
+                              AuthService authService = AuthService();
+                              await authService.initAuthService();
+
+                              authService.verifyPhoneNumber(phoneNumber);
+                              setState(() {
+                                isLoading1 = false;
+                              });
+                            },
                       child: const Text(
                         loginString,
                         style: TextStyle(fontSize: 20),
@@ -135,6 +147,13 @@ class _LoginState extends State<Login> {
                 ),
               ),
             ),
+             if (isLoading1) // Show the loading indicator conditionally
+              Container(
+                color: Colors.black54,
+                child: const Center(
+                  child: CircularProgressIndicator(),
+                ),
+              ),
             if (isLoading) // Show the loading indicator conditionally
               Container(
                 color: Colors.black54,

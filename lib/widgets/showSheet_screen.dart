@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:top_modal_sheet/top_modal_sheet.dart';
 import 'package:video_subtitle_translator/colors.dart';
+import 'package:video_subtitle_translator/home.dart';
 import 'package:video_subtitle_translator/services/firebase_services.dart';
 import '../constants.dart';
 import '../login.dart';
@@ -14,6 +15,7 @@ void showProfileSheet(BuildContext context) async {
   String displayName = await authService.getDisplayName();
   String email = await authService.getEmail();
   String uid = await authService.getUid();
+  String phoneNo = await authService.getPhoneNo();
 
   Future<String?> getUserPhoneNumber(String? uid) async {
     if (uid == null) return null;
@@ -98,7 +100,7 @@ void showProfileSheet(BuildContext context) async {
                               color: primaryColor)),
                       const SizedBox(height: 5),
                       Text(
-                        phoneNumber ?? noNumberMsg,
+                        phoneNo,
                         style: const TextStyle(fontSize: 15),
                       ),
                     ],
@@ -129,6 +131,9 @@ void showProfileSheet(BuildContext context) async {
 
 void showPhoneNoVerificationSheet(BuildContext context) {
   TextEditingController phoneNumberController = TextEditingController();
+  String phoneNumber = "";
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+
   Future<void> verifyPhoneNumber() async {
     String phoneNumber = phoneNumberController.text;
     try {
@@ -222,6 +227,7 @@ void showPhoneNoVerificationSheet(BuildContext context) {
                       child: ElevatedButton(
                           onPressed: () {
                             verifyPhoneNumber();
+                            // authService.verifyPhoneNumber(phoneNumber);
                           },
                           style: ElevatedButton.styleFrom(
                               backgroundColor: primaryColor),
