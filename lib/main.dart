@@ -18,10 +18,6 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // return const GetMaterialApp(
-    //   debugShowCheckedModeBanner: false,
-    //   home: Login(),
-    // );
     if(authService.isUserLoggedIn()){
       return const GetMaterialApp(
       debugShowCheckedModeBanner: false,

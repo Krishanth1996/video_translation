@@ -5,3 +5,4 @@ const Color borderColor = Colors.grey;
 const Color whiteColor = Colors.white;
 const Color greenColor = Colors.green;
 const Color blackColor = Colors.black;
+const Color redColor = Colors.red;

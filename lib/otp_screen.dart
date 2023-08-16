@@ -64,7 +64,8 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
                   setState(() {
                     isLoading = true;
                   });
-                  authService.submitOTP(otpController.text.trim());
+                  authService.submitOTP(otpController.text.trim(),widget.verificationId);
+
                   setState(() {
                     isLoading = false;
                     showOverlay = true;
@@ -72,8 +73,7 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
                       setState(() {
                         showOverlay = false;
                       });
-                      //  Get.to(const Home());
-                     });
+                    });
                   });
                   print(otpController.text.trim());
                 },

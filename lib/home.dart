@@ -31,19 +31,22 @@ class _HomeState extends State<Home> {
   String? displayName;
   String? email;
   String? uid;
-  TextEditingController videoNameController = TextEditingController();
-  TextEditingController subtitleController = TextEditingController();
-  VideoPlayerController? controller;
-  late Future<void> initializeVideoPlayerFuture;
-  late File videoFile;
-  String? videoName;
+  String? phoneNumber;
   String srtContent = '';
   String subtitles = '';
   String videoId = '';
 
+  TextEditingController videoNameController = TextEditingController();
+  TextEditingController subtitleController = TextEditingController();
+
+  VideoPlayerController? controller;
+  final FlutterFFmpeg flutterFFmpeg = FlutterFFmpeg();
+
+  late Future<void> initializeVideoPlayerFuture;
+  late File videoFile;
+
   bool isVideoExist = false;
   bool isVideoPlaying = false;
-  bool isVideoNameExist = false;
   bool isLoadingVideo = false;
   bool showLoadingPopup = false;
   bool isEditingName = false;
@@ -54,8 +57,9 @@ class _HomeState extends State<Home> {
   bool isVideoPlayerVisible = false;
   bool isVideoDeleting = false;
 
-  final FlutterFFmpeg flutterFFmpeg = FlutterFFmpeg();
   List<String> extractedAudioPaths = [];
+  List<Map<String, dynamic>> subtitleLines = [];
+
   Duration videoDuration = Duration.zero;
   Duration currentPosition = Duration.zero;
   Timer? durationTimer;
@@ -86,21 +90,12 @@ class _HomeState extends State<Home> {
   }
 
   Widget buildIndicator() {
-    if (isVideoExist) {
-      return VideoProgressIndicator(
-        controller ?? VideoPlayerController.network(''),
-        allowScrubbing: true,
-        colors: const VideoProgressColors(
-            playedColor: whiteColor, backgroundColor: borderColor),
-      );
-    } else {
-      return VideoProgressIndicator(
-        VideoPlayerController.network(''), // Create an empty controller
-        allowScrubbing: false,
-        colors: const VideoProgressColors(
-            playedColor: borderColor, backgroundColor: borderColor),
-      );
-    }
+    return VideoProgressIndicator(
+      controller ?? VideoPlayerController.network(''),
+      allowScrubbing: true,
+      colors: const VideoProgressColors(
+          playedColor: whiteColor, backgroundColor: borderColor),
+    );
   }
 
   //Video timing while playing//
@@ -147,7 +142,7 @@ class _HomeState extends State<Home> {
 
       // Set the video duration
       setState(() {
-        videoDuration = videoPlayerController.value.duration ?? Duration.zero;
+        videoDuration = videoPlayerController.value.duration;
       });
 
       // Start the timer to update the running duration
@@ -158,20 +153,17 @@ class _HomeState extends State<Home> {
       });
 
       // Check if the video duration is less than or equal to 60 seconds
-      if (videoPlayerController.value.duration != null &&
-          videoPlayerController.value.duration!.inSeconds > 60) {
+      if (videoPlayerController.value.duration.inSeconds > 60) {
         setState(() {
           isLoadingVideo = false;
           showLoadingPopup = false;
         });
         showLoadingPopup = false;
+        // ignore: use_build_context_synchronously
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text(select60MVideMsg),
-            backgroundColor: primaryColor,
-          ),
+              content: Text(select60MVideMsg), backgroundColor: primaryColor),
         );
-
         // Dispose the video player controller
         videoPlayerController.dispose();
         return;
@@ -181,7 +173,6 @@ class _HomeState extends State<Home> {
       videoPlayerController.dispose();
       setState(() {
         videoFile = File(pickedFile.path);
-        videoName = pickedFile.name;
         print("print$videoFile");
 
         controller = VideoPlayerController.file(videoFile);
@@ -189,7 +180,6 @@ class _HomeState extends State<Home> {
 
         controller!.setLooping(true);
         isVideoExist = true;
-        isVideoNameExist = true;
         isLoadingVideo = true;
         showLoadingPopup = true;
       });
@@ -207,14 +197,13 @@ class _HomeState extends State<Home> {
   // Extract audio from imported video Start//
   Future<void> extractAudioFromVideo() async {
     Directory? appDir = await getExternalStorageDirectory();
-    final String outputPath =
-        '${appDir?.path}/audio${DateTime.now().millisecondsSinceEpoch}.m4a';
+    final String outputPath ='${appDir?.path}/audio${DateTime.now().millisecondsSinceEpoch}.m4a';
     String videoId = generateVideoId();
     var result = await flutterFFmpeg
-        .execute('-i ${videoFile.path} -vn -c:a copy $outputPath');
+        .execute('-i ${videoFile.path} -vn -c:a aac $outputPath');
 
+    // Audio extraction successful
     if (result == 0) {
-      // Audio extraction successful
       setState(() {
         extractedAudioPaths.add(outputPath);
         showLoadingPopup = false;
@@ -225,17 +214,22 @@ class _HomeState extends State<Home> {
       // Calculate audio duration
       File audioFile = File(outputPath);
       int fileSizeInBytes = await audioFile.length();
-      double bitRate = 128000; // Bit rate in bits per second (e.g., 128 kbps)
+      double bitRate = 128000;
       double durationInSeconds = fileSizeInBytes * 8 / bitRate;
       print("Extracted audio duration: $durationInSeconds seconds");
       if (durationInSeconds <= 900) {
+        // ignore: use_build_context_synchronously
         showSubtitleSelectionSheet(context);
         saveRemainingTime(durationInSeconds);
       } else {
+        // ignore: use_build_context_synchronously
         showLimitAlert(context);
       }
     } else {
       //Audio extraction failed
+      Get.snackbar(sorryMsg, audioExtractFailMsg,
+          snackPosition: SnackPosition.BOTTOM,
+          titleText: const Text(sorryMsg, style: TextStyle(color: redColor)));
       setState(() {
         showLoadingPopup = false;
       });
@@ -246,7 +240,7 @@ class _HomeState extends State<Home> {
   // Api call for convert text from extracted audio start //
   Future<void> convertAudioToText(String value) async {
     String apiUrl = 'https://transcribe.whisperapi.com';
-    String apiKey = 'EHCJ8SADB186HZNJPDCKZSNGMFIKI26A';
+    String apiKey = 'VX1DTXNWALJ2S22Q2M6RDBVKRV6SJRQG';
     String filePath = extractedAudioPaths.last;
     String fileType = 'm4a';
 
@@ -271,19 +265,21 @@ class _HomeState extends State<Home> {
     if (response.statusCode == 200) {
       var responseBody = await response.stream.bytesToString();
       print(responseBody);
+
+      // ignore: use_build_context_synchronously
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            subtitleCreateSuccessMsg,
-            style: TextStyle(color: whiteColor),
-          ),
+          content: Text(subtitleCreateSuccessMsg,style: TextStyle(color: whiteColor)),
           backgroundColor: greenColor,
         ),
       );
       // // Save the subtitle to Firestore
       saveSubtitleToFirestore(responseBody);
-    } else {
+    } 
+    else {
       print('Request failed with status: ${response.statusCode}');
+
+      // ignore: use_build_context_synchronously
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Request failed with status: ${response.statusCode}'),
@@ -296,8 +292,7 @@ class _HomeState extends State<Home> {
 
   // Save converted subtitles in Firestore start //
   void saveSubtitleToFirestore(String subtitle) {
-    CollectionReference usersCollection =
-        FirebaseFirestore.instance.collection('Subtitle_user');
+    CollectionReference usersCollection =FirebaseFirestore.instance.collection('Subtitle_user');
 
     usersCollection.doc(email).get().then((docSnapshot) {
       if (docSnapshot.exists) {
@@ -326,13 +321,20 @@ class _HomeState extends State<Home> {
 
       var jsonResponse = json.decode(subtitle);
       var segments = jsonResponse['segments'];
-      List<String> subtitleLines = [];
-
+      
       for (var segment in segments) {
         String text = segment['text'];
-        subtitleLines.add(text);
+        double start = segment['start'];
+        double end = segment['end'];
+
+        subtitleLines.add({
+          'text': text,
+          'start': start,
+          'end': end,
+        });
+
         setState(() {
-          subtitles = subtitleLines.join('\n');
+          subtitles = subtitleLines.map((line) => '${line['text']}  ${line['start']} - ${line['end']}').join('\n');
           isTranscribing = false;
         });
       }
@@ -342,23 +344,28 @@ class _HomeState extends State<Home> {
   }
   // Save converted subtitles in Firestore end //
 
-  String generateSRT(String subtitleText) {
-    List<String> lines = subtitleText.split('\n');
+  //Generate SRT File Start//
+  String generateSRT(subtitleLines) {
+    List<String> lines = subtitleLines.split('\n');
     StringBuffer srtContent = StringBuffer();
     for (int i = 0; i < lines.length; i++) {
       srtContent.writeln((i + 1).toString());
-      srtContent.writeln('00:00:00,000 --> 00:00:01,000');
-      srtContent.writeln(lines[i]);
+      // srtContent.writeln('00:00:00,000 --> 00:00:01,000');
       srtContent.writeln();
+      srtContent.writeln(lines[i]);
     }
     return srtContent.toString();
   }
+  //Generate SRT File End//
 
+  //Save SRT File Start//
   void saveSRTToFile(String srtContent) {
     File file = File('subtitle.srt');
     file.writeAsStringSync(srtContent);
   }
+  //Save SRT File End//
 
+//Download SRT File Start//
   Future<void> downloadSRTFile() async {
     String srtContent = generateSRT(subtitles);
     String videoId = generateVideoId();
@@ -526,7 +533,6 @@ class _HomeState extends State<Home> {
     return WillPopScope(
       onWillPop: _onWillPop,
       child: Scaffold(
-        backgroundColor: const Color.fromARGB(255, 226, 224, 218),
         appBar: AppBar(
           centerTitle: true,
           backgroundColor: primaryColor,
@@ -552,7 +558,9 @@ class _HomeState extends State<Home> {
                       const SizedBox(width: 10),
                       TextButton(
                           onPressed: () {
-                            showProfileSheet(context);
+                            showProfileSheet(
+                              context,
+                            );
                           },
                           child: const Text(profileString,
                               style: TextStyle(color: primaryColor))),
@@ -613,8 +621,8 @@ class _HomeState extends State<Home> {
                       margin: EdgeInsets.only(top: width / 1.5),
                       child: ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                            backgroundColor:
-                                const Color.fromARGB(255, 226, 224, 218),
+                            backgroundColor:primaryColor,
+                                // const Color.fromARGB(255, 226, 224, 218),
                             shape: const RoundedRectangleBorder(
                                 borderRadius:
                                     BorderRadius.all(Radius.circular(20)),
@@ -623,11 +631,11 @@ class _HomeState extends State<Home> {
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: const [
-                            Icon(Icons.video_collection, color: primaryColor),
+                            Icon(Icons.video_collection, color: whiteColor),
                             SizedBox(width: 10),
                             Text(importVideoString,
                                 style: TextStyle(
-                                    color: primaryColor,
+                                    color: whiteColor,
                                     fontSize: 20,
                                     fontWeight: FontWeight.bold)),
                           ],
@@ -812,7 +820,36 @@ class _HomeState extends State<Home> {
                               if (isTranscribing)
                                 const Center(child: LoadingScreen())
                               else if (subtitles.isNotEmpty)
-                                Text(subtitles),
+                                // Text(subtitles),
+                                Container(
+                                  height: 200,
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: boxDecoration,
+                                  child: ListView.builder(
+                                    itemCount: subtitleLines.length,
+                                    itemBuilder: (context, index) {
+                                      String text = subtitleLines[index]['text'];
+                                      double start = subtitleLines[index]['start']*1000;
+                                      double end = subtitleLines[index]['end']*1000;
+                                
+                                      Duration currentPosition = controller!.value.position;
+                                
+                                      bool isHighlighted = currentPosition.inMilliseconds >= start &&
+                                                          currentPosition.inMilliseconds <= end;
+                                
+                                      return Text(
+                                      text,
+                                      style: TextStyle(
+                                        fontSize: isHighlighted ? 16 :14,
+                                        color: isHighlighted ? Colors.green : blackColor,
+                                        fontWeight: isHighlighted? FontWeight.bold :FontWeight.normal ,
+                                      ),
+                                    );
+                                    },
+                                  ),
+                                ),
+
+
                               const SizedBox(height: 20),
                               Container(
                                 margin: EdgeInsets.only(left: 10),
@@ -968,11 +1005,11 @@ class _HomeState extends State<Home> {
                         borderSide: BorderSide(color: primaryColor, width: 2)),
                     errorBorder: const OutlineInputBorder(
                       borderRadius: BorderRadius.all(Radius.circular(10)),
-                      borderSide: BorderSide(color: Colors.red, width: 2),
+                      borderSide: BorderSide(color: redColor, width: 2),
                     ),
                     focusedErrorBorder: const OutlineInputBorder(
                       borderRadius: BorderRadius.all(Radius.circular(10)),
-                      borderSide: BorderSide(color: Colors.red, width: 2),
+                      borderSide: BorderSide(color: redColor, width: 2),
                     )),
                 items: const [
                   DropdownMenuItem<String>(
@@ -1068,7 +1105,7 @@ class _HomeState extends State<Home> {
               Get.back();
             },
             child: const Text('Discard',
-                style: TextStyle(color: Colors.green, fontSize: 18))),
+                style: TextStyle(color: greenColor, fontSize: 18))),
       ],
     );
     AlertDialog alert = AlertDialog(
@@ -1079,9 +1116,9 @@ class _HomeState extends State<Home> {
               backgroundColor: Color.fromARGB(255, 197, 196, 196),
               child: Icon(
                 CupertinoIcons.exclamationmark,
-                color: primaryColor,
+                color: redColor,
               )),
-          Text(title, style: const TextStyle(color: Colors.red, fontSize: 15)),
+          Text(title, style: const TextStyle(color: redColor, fontSize: 15)),
         ],
       )),
       content: Text(message,

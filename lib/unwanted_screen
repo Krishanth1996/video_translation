@@ -1,0 +1,29 @@
+// Future<void> phoneAuthentication(String phoneNo) async {
+  //   await _auth.verifyPhoneNumber(
+  //     phoneNumber: phoneNo,
+  //     verificationCompleted: (credential) async {
+  //       await _auth.signInWithCredential(credential);
+  //     },
+  //     codeSent: (verificationId, resendToken) {
+  //       verificationId = verificationId;
+  //     },
+  //     codeAutoRetrievalTimeout: (verificationId) {
+  //       verificationId = verificationId;
+  //     },
+  //     verificationFailed: (e) {
+  //       if (e.code == 'invalid-phone-numbert') {
+  //         Get.snackbar('Error', 'The provided phone numbet is not valid');
+  //       } else {
+  //         Get.snackbar('Error', 'Something went wrong. Try again');
+  //         Get.to(const Login());
+  //       }
+  //     },
+  //   );
+  // }
+
+  // void verifyOTP(String otp) async {
+    
+  //   var credentials = await _auth.signInWithCredential(
+  //       PhoneAuthProvider.credential(verificationId: verificationId, smsCode: otp));
+  //   credentials.user != null ? true : false;
+  // }

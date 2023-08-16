@@ -1,63 +1,4 @@
-// import 'package:firebase_auth/firebase_auth.dart';
-// import 'package:google_sign_in/google_sign_in.dart';
-
-// class AuthService {
-//   final FirebaseAuth _auth = FirebaseAuth.instance;
-//   final GoogleSignIn _googleSignIn = GoogleSignIn();
-
-//   // Sign in with Google
-//   Future<User?> signInWithGoogle() async {
-//     try {
-//       // Trigger the Google Sign In process
-//       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-
-//       if (googleUser == null) return null;
-
-//       // Obtain the GoogleSignInAuthentication object
-//       final GoogleSignInAuthentication googleAuth =
-//           await googleUser.authentication;
-
-//       // Create a new credential using the GoogleSignInAuthentication object
-//       final AuthCredential credential = GoogleAuthProvider.credential(
-//         accessToken: googleAuth.accessToken,
-//         idToken: googleAuth.idToken,
-//       );
-
-//       // Sign in to Firebase with the Google credentials
-//       final UserCredential authResult =
-//           await _auth.signInWithCredential(credential);
-//       print(authResult.user);
-//       User? user = authResult.user;
-//       if (user != null) {
-//         print("User Name: ${user.displayName}");
-//         print("User Email ${user.email}");
-//         print("User Id ${user.uid}");
-//       }
-//       return authResult.user;
-//     } catch (error) {
-//       print("Error signing in with Google: $error");
-//       return null;
-//     }
-//   }
-
-//   Future<void> signOut() async {
-//     final GoogleSignIn _googleSignIn = GoogleSignIn();
-//     final FirebaseAuth _auth = FirebaseAuth.instance;
-
-//     try {
-//       // Sign out from Firebase
-//       await _auth.signOut();
-
-//       // Sign out from Google
-//       await _googleSignIn.signOut();
-
-//       print("User signed out successfully.");
-//     } catch (error) {
-//       print("Error signing out: $error");
-//     }
-//   }
-// }
-
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -70,9 +11,12 @@ import 'package:video_subtitle_translator/otp_screen.dart';
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn();
+
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
   SharedPreferences? _prefs;
-  String phoneNumber = "";
-  String verificationId = "";
+  String verificationId = '';
+  String smsCode = "";
 
   AuthService() {
     initAuthService(); // Initialize AuthService and SharedPreferences
@@ -92,16 +36,14 @@ class AuthService {
   }
 
   // Sign in with Google
-  Future<User?> signInWithGoogle() async {
+  Future<User?> signInWithGoogle(String phoneNumber) async {
     try {
       // Trigger the Google Sign In process
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-
       if (googleUser == null) return null;
 
       // Obtain the GoogleSignInAuthentication object
-      final GoogleSignInAuthentication googleAuth =
-          await googleUser.authentication;
+      final GoogleSignInAuthentication googleAuth =await googleUser.authentication;
 
       // Create a new credential using the GoogleSignInAuthentication object
       final AuthCredential credential = GoogleAuthProvider.credential(
@@ -110,8 +52,7 @@ class AuthService {
       );
 
       // Sign in to Firebase with the Google credentials
-      final UserCredential authResult =
-          await _auth.signInWithCredential(credential);
+      final UserCredential authResult =await _auth.signInWithCredential(credential);
 
       User? user = authResult.user;
       if (user != null) {
@@ -119,8 +60,11 @@ class AuthService {
         await _prefs?.setString('displayName', user.displayName ?? '');
         await _prefs?.setString('email', user.email ?? '');
         await _prefs?.setString('uid', user.uid);
-        await _prefs?.setString('phoneNo', user.phoneNumber ?? '');
-        Get.offAll(const Home());
+
+        // if (phoneNumber.isNotEmpty) {
+        //   await user.updatePhoneNumber(PhoneAuthProvider.credential(verificationId: verificationId, smsCode: smsCode));
+        //   await _prefs?.setString('phoneNo', phoneNumber);
+        // }
       }
       print(user?.displayName);
       print(user?.email);
@@ -128,12 +72,12 @@ class AuthService {
       if (AuthService().isUserLoggedIn()) {
         // Navigate to home screen
         WidgetsBinding.instance!.addPostFrameCallback((_) {
-          Get.offAll(const Home());
+          Get.to(const Home());
         });
       }
-
       return authResult.user;
-    } catch (error) {
+    } 
+    catch (error) {
       print("Error signing in with Google: $error");
       return null;
     }
@@ -143,7 +87,6 @@ class AuthService {
     try {
       // Sign out from Firebase
       await _auth.signOut();
-
       // Sign out from Google
       await _googleSignIn.signOut();
 
@@ -154,7 +97,8 @@ class AuthService {
       await _prefs?.remove('phoneNo');
 
       print("User signed out successfully.");
-    } catch (error) {
+    } 
+    catch (error) {
       print("Error signing out: $error");
     }
   }
@@ -173,26 +117,55 @@ class AuthService {
   }
 
   Future<String> getPhoneNo() async {
-    return _prefs?.getString('phoneNumber') ?? '';
+    return _prefs?.getString('phoneNo') ?? '';
   }
 
-  Future<void> verifyPhoneNumber(String phoneNumber) async {
+  Future<String> getUpdatePhoneNo() async {
+    try {
+      String uid = _auth.currentUser!.uid;
+      DocumentSnapshot snapshot =
+          await _firestore.collection('users').doc(uid).get();
+      return snapshot.get('phoneNo');
+    } catch (error) {
+      print('Error getting phone number: $error');
+      return '';
+    }
+  }
+
+  Future<String> getUpdateEmail() async {
+    try {
+      String uid = _auth.currentUser!.uid;
+      DocumentSnapshot snapshot =
+          await _firestore.collection('users').doc(uid).get();
+      return snapshot.get('email');
+    } catch (error) {
+      print('Error getting email address: $error');
+      return '';
+    }
+  }
+
+  Future<void> verifyPhoneNumber(String phoneNo) async {
     try {
       await _auth.verifyPhoneNumber(
-        phoneNumber: phoneNumber,
+        phoneNumber: phoneNo,
         verificationCompleted: (PhoneAuthCredential credential) async {
           await _auth.signInWithCredential(credential);
+           print('Phone number automatically verified and user signed in.');
         },
         verificationFailed: (FirebaseAuthException e) {
-          print("Verification Failed: ${e.message}");
-          Get.snackbar('Error', "Verification Failed: ${e.message}");
+          if (e.code == 'invalid-phone-number') {
+            Get.snackbar('Error', 'The provided phone numbet is not valid');
+          } else {
+            Get.snackbar('Error', 'Something went wrong. Try again');
+            Get.to(const Login());
+          }
         },
         codeSent: (String verificationId, int? resendToken) {
-          this.verificationId = verificationId;
-          Get.to(OTPVerificationScreen(phoneNumber, verificationId));
-          // Get.to(OTPVerificationScreen(verificationId));
+          verificationId = verificationId;
+          Get.to(OTPVerificationScreen(phoneNo, verificationId));
         },
         codeAutoRetrievalTimeout: (String verificationId) {
+          verificationId = verificationId;
           // Called when the automatic code retrieval process times out
         },
       );
@@ -201,25 +174,87 @@ class AuthService {
     }
   }
 
-  Future<void> submitOTP(String otp) async {
+  Future<void> submitOTP(String otp, String verificationId) async {
     try {
-      PhoneAuthCredential credential = PhoneAuthProvider.credential(
-        verificationId: verificationId,
-        smsCode: otp,
-      );
-      UserCredential userCredential =
-          await _auth.signInWithCredential(credential);
-      User? user = userCredential.user;
-      if (user != null) {
-        await _prefs?.setString('uid', user.uid);
-        await _prefs?.setString('email', user.email ?? '');
-        await _prefs?.setString('displayName', user.displayName ?? '');
-        await _prefs?.setString('phoneNumber', user.phoneNumber ?? '');
+      if (verificationId == null) {
+        throw Exception("Verification ID is null");
+      } else {
+        PhoneAuthCredential credential = PhoneAuthProvider.credential(
+          verificationId: verificationId,
+          smsCode: otp,
+        );
+
+        UserCredential userCredential =
+            await _auth.signInWithCredential(credential);
+        User? user = userCredential.user;
+        if (user != null) {
+          await _prefs?.setString('phoneNo', user.phoneNumber ?? '');
+          Get.to(const Home());
+        } else {
+          throw Exception("Failed to sign in with OTP");
+        }
       }
-      Get.to(Home());
     } catch (error) {
       print("Error submitting OTP: $error");
       Get.to(const Login());
+    }
+  }
+
+  Future<void> savePhoneNo(String phoneNo) async {
+    try {
+      String uid = _auth.currentUser!.uid;
+      // String? uemail = _auth.currentUser!.email;
+
+      // Check if user already has a phone number
+      DocumentSnapshot userDoc =
+          await _firestore.collection('users').doc(uid).get();
+      if (userDoc.exists && userDoc.get('phoneNo') != null) {
+        // User already has a phone number, retrieve it from Firebase
+        String existingPhoneNumber = userDoc.get('phoneNo');
+        print('Phone number already exists for this user');
+        Get.snackbar(
+            'Notification', 'Phone number already exists for this user');
+      } else {
+        // Save the number if not already exists
+        await _firestore.collection('users').doc(uid).set({
+          'phoneNo': phoneNo,
+        }, SetOptions(merge: true));
+        DocumentSnapshot snapshot =
+            await _firestore.collection('users').doc(uid).get();
+        // return snapshot.get('phoneNo');
+        // Get.snackbar('', 'Phone number successfully updated');
+        await _prefs?.setString('phoneNo', phoneNo);
+      }
+    } catch (error) {
+      print('Error saving phone number: $error');
+    }
+  }
+
+  Future<void> saveEmail(String email) async {
+    try {
+      String uid = _auth.currentUser!.uid;
+
+      // Check if user already has a email address
+      DocumentSnapshot userDoc =
+          await _firestore.collection('users').doc(uid).get();
+      if (userDoc.exists && userDoc.get('email') != null) {
+        // User already has a email address, retrieve it from Firebase
+        String existingEmail = userDoc.get('email');
+        print('Email Address already exists for this user');
+        Get.snackbar(
+            'Notification', 'Email Address already exists for this user');
+      } else {
+        // Save the email address if not already exists
+        await _firestore.collection('users').doc(uid).set({
+          'email': email,
+        }, SetOptions(merge: true));
+        DocumentSnapshot snapshot =
+            await _firestore.collection('users').doc(uid).get();
+
+        await _prefs?.setString('email', email);
+      }
+    } catch (error) {
+      print('Error saving Email Address: $error');
     }
   }
 }
