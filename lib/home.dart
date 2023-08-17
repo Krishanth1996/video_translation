@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -13,6 +14,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:video_player/video_player.dart';
 import 'package:http/http.dart' as http;
 import 'package:video_subtitle_translator/constants.dart';
+import 'package:video_subtitle_translator/remainingTimeWidget.dart';
 import 'package:video_subtitle_translator/services/firebase_services.dart';
 import 'package:video_subtitle_translator/widgets/loading_screen.dart';
 import 'package:video_subtitle_translator/widgets/showSheet_screen.dart';
@@ -60,6 +62,8 @@ class _HomeState extends State<Home> {
   List<String> extractedAudioPaths = [];
   List<Map<String, dynamic>> subtitleLines = [];
 
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+
   Duration videoDuration = Duration.zero;
   Duration currentPosition = Duration.zero;
   Timer? durationTimer;
@@ -82,6 +86,8 @@ class _HomeState extends State<Home> {
 
   //Loading User Details//
   Future<void> loadUserData() async {
+    authService.isUserLoggedIn();
+
     setState(() async {
       displayName = await authService.getDisplayName();
       email = await authService.getEmail();
@@ -158,7 +164,7 @@ class _HomeState extends State<Home> {
           isLoadingVideo = false;
           showLoadingPopup = false;
         });
-        showLoadingPopup = false;
+        // showLoadingPopup = false;
         // ignore: use_build_context_synchronously
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -197,7 +203,8 @@ class _HomeState extends State<Home> {
   // Extract audio from imported video Start//
   Future<void> extractAudioFromVideo() async {
     Directory? appDir = await getExternalStorageDirectory();
-    final String outputPath ='${appDir?.path}/audio${DateTime.now().millisecondsSinceEpoch}.m4a';
+    final String outputPath =
+        '${appDir?.path}/audio${DateTime.now().millisecondsSinceEpoch}.m4a';
     String videoId = generateVideoId();
     var result = await flutterFFmpeg
         .execute('-i ${videoFile.path} -vn -c:a aac $outputPath');
@@ -240,7 +247,7 @@ class _HomeState extends State<Home> {
   // Api call for convert text from extracted audio start //
   Future<void> convertAudioToText(String value) async {
     String apiUrl = 'https://transcribe.whisperapi.com';
-    String apiKey = 'VX1DTXNWALJ2S22Q2M6RDBVKRV6SJRQG';
+    String apiKey = 'NVJN8DFG5LEAW9DNQUZXZA8H96JMY59E';
     String filePath = extractedAudioPaths.last;
     String fileType = 'm4a';
 
@@ -266,17 +273,18 @@ class _HomeState extends State<Home> {
       var responseBody = await response.stream.bytesToString();
       print(responseBody);
 
+      // Save the subtitle to Firestore
+      saveSubtitleToFirestore(responseBody);
+
       // ignore: use_build_context_synchronously
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(subtitleCreateSuccessMsg,style: TextStyle(color: whiteColor)),
+          content: Text(subtitleCreateSuccessMsg,
+              style: TextStyle(color: whiteColor)),
           backgroundColor: greenColor,
         ),
       );
-      // // Save the subtitle to Firestore
-      saveSubtitleToFirestore(responseBody);
-    } 
-    else {
+    } else {
       print('Request failed with status: ${response.statusCode}');
 
       // ignore: use_build_context_synchronously
@@ -292,7 +300,10 @@ class _HomeState extends State<Home> {
 
   // Save converted subtitles in Firestore start //
   void saveSubtitleToFirestore(String subtitle) {
-    CollectionReference usersCollection =FirebaseFirestore.instance.collection('Subtitle_user');
+    CollectionReference usersCollection =
+        FirebaseFirestore.instance.collection('Subtitle_user');
+    String uid = _auth.currentUser!.uid;
+    String? email = _auth.currentUser!.email;
 
     usersCollection.doc(email).get().then((docSnapshot) {
       if (docSnapshot.exists) {
@@ -319,25 +330,30 @@ class _HomeState extends State<Home> {
         });
       }
 
-      var jsonResponse = json.decode(subtitle);
-      var segments = jsonResponse['segments'];
-      
-      for (var segment in segments) {
-        String text = segment['text'];
-        double start = segment['start'];
-        double end = segment['end'];
+      setState(() {
+        subtitleLines.clear(); // Clear the existing subtitle data
 
-        subtitleLines.add({
-          'text': text,
-          'start': start,
-          'end': end,
-        });
+        var jsonResponse = json.decode(subtitle);
+        var segments = jsonResponse['segments'];
 
-        setState(() {
-          subtitles = subtitleLines.map((line) => '${line['text']}  ${line['start']} - ${line['end']}').join('\n');
-          isTranscribing = false;
-        });
-      }
+        for (var segment in segments) {
+          String text = segment['text'];
+          double start = segment['start'];
+          double end = segment['end'];
+
+          subtitleLines.add({
+            'text': text,
+            'start': start,
+            'end': end,
+          });
+        }
+
+        subtitles = subtitleLines
+            .map((line) => '${line['text']}  ${line['start']} - ${line['end']}')
+            .join('\n\n');
+        isTranscribing = false;
+        subtitleController.text = subtitles;
+      });
     }).catchError((error) {
       print('Error checking user document: $error');
     });
@@ -459,8 +475,12 @@ class _HomeState extends State<Home> {
         Map<String, dynamic>? userData =
             docSnapshot.data() as Map<String, dynamic>?;
         if (userData != null) {
-          double currentRemainingTime = userData['remainingTime'] as double;
-          double currentMonthlyLimit = userData['monthlyLimit'] as double;
+          Map<String, dynamic> userDataMap = userData as Map<String, dynamic>;
+          // double currentRemainingTime = userData['remainingTime'] as double;
+          // double currentMonthlyLimit = userData['monthlyLimit'] as double;
+
+          double currentRemainingTime = userDataMap['remainingTime'] as double;
+          double currentMonthlyLimit = userDataMap['monthlyLimit'] as double;
 
           if (now.isAfter(nextMonth)) {
             // Reset for a new month
@@ -616,16 +636,22 @@ class _HomeState extends State<Home> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
                   //Import Video Field Start//
+                  Center(
+                    child: Row(
+                      children: const [
+                        Text('Remaining Time:'),
+                        Text('')
+                      ],
+                    ),
+                  ),
                   if (!isVideoExist)
                     Container(
                       margin: EdgeInsets.only(top: width / 1.5),
                       child: ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                            backgroundColor:primaryColor,
-                                // const Color.fromARGB(255, 226, 224, 218),
+                            backgroundColor: primaryColor,
                             shape: const RoundedRectangleBorder(
-                                borderRadius:
-                                    BorderRadius.all(Radius.circular(20)),
+                                borderRadius:BorderRadius.all(Radius.circular(20)),
                                 side: BorderSide(color: primaryColor)),
                             padding: const EdgeInsets.all(15)),
                         child: Row(
@@ -640,7 +666,7 @@ class _HomeState extends State<Home> {
                                     fontWeight: FontWeight.bold)),
                           ],
                         ),
-                        onPressed: () {
+                        onPressed: () async {
                           getVideo();
                           showLoadingPopup = true;
                         },
@@ -820,36 +846,55 @@ class _HomeState extends State<Home> {
                               if (isTranscribing)
                                 const Center(child: LoadingScreen())
                               else if (subtitles.isNotEmpty)
+
                                 // Text(subtitles),
                                 Container(
                                   height: 200,
-                                  padding: const EdgeInsets.all(10),
+                                  margin: const EdgeInsets.all(10),
                                   decoration: boxDecoration,
+                                  padding: const EdgeInsets.all(15),
                                   child: ListView.builder(
                                     itemCount: subtitleLines.length,
                                     itemBuilder: (context, index) {
-                                      String text = subtitleLines[index]['text'];
-                                      double start = subtitleLines[index]['start']*1000;
-                                      double end = subtitleLines[index]['end']*1000;
-                                
-                                      Duration currentPosition = controller!.value.position;
-                                
-                                      bool isHighlighted = currentPosition.inMilliseconds >= start &&
-                                                          currentPosition.inMilliseconds <= end;
-                                
-                                      return Text(
-                                      text,
-                                      style: TextStyle(
-                                        fontSize: isHighlighted ? 16 :14,
-                                        color: isHighlighted ? Colors.green : blackColor,
-                                        fontWeight: isHighlighted? FontWeight.bold :FontWeight.normal ,
-                                      ),
-                                    );
+                                      String text =
+                                          subtitleLines[index]['text'];
+                                      double start =
+                                          subtitleLines[index]['start'] * 1000;
+                                      double end =
+                                          subtitleLines[index]['end'] * 1000;
+
+                                      Duration currentPosition =
+                                          controller!.value.position;
+                                      bool isHighlighted = currentPosition
+                                                  .inMilliseconds >=
+                                              start &&
+                                          currentPosition.inMilliseconds <= end;
+
+                                      return Row(
+                                        mainAxisAlignment: isHighlighted
+                                            ? MainAxisAlignment.center
+                                            : MainAxisAlignment.center,
+                                        children: [
+                                          Flexible(
+                                            child: Text(
+                                              text,
+                                              style: TextStyle(
+                                                fontSize:
+                                                    isHighlighted ? 17 : 14,
+                                                color: isHighlighted
+                                                    ? Colors.green
+                                                    : blackColor,
+                                                fontWeight: isHighlighted
+                                                    ? FontWeight.bold
+                                                    : FontWeight.normal,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      );
                                     },
                                   ),
                                 ),
-
-
                               const SizedBox(height: 20),
                               Container(
                                 margin: EdgeInsets.only(left: 10),
@@ -859,8 +904,7 @@ class _HomeState extends State<Home> {
                                   children: [
                                     ElevatedButton(
                                       style: ElevatedButton.styleFrom(
-                                          backgroundColor: const Color.fromARGB(
-                                              255, 226, 224, 218),
+                                          backgroundColor: whiteColor,
                                           shape: const RoundedRectangleBorder(
                                               borderRadius: BorderRadius.all(
                                                   Radius.circular(20)),
@@ -880,7 +924,7 @@ class _HomeState extends State<Home> {
                                         children: const [
                                           Icon(Icons.delete,
                                               color: primaryColor),
-                                          SizedBox(width: 10),
+                                          SizedBox(width: 5),
                                           Text(discardString,
                                               style: TextStyle(
                                                   color: primaryColor)),
@@ -903,9 +947,11 @@ class _HomeState extends State<Home> {
                                               downloadSRTFile();
                                             },
                                             child: Row(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.center,
                                               children: const [
                                                 Icon(Icons.download),
-                                                SizedBox(width: 10),
+                                                SizedBox(width: 5),
                                                 Text(downloadSRTString),
                                               ],
                                             ))

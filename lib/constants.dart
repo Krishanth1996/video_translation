@@ -19,7 +19,7 @@ const String createSubtitleString = "Create Subtitle";
 const String importVideoString = "Import video";
 const String cancelString = "Cancel";
 const String confirmString = "Confirm";
-const String downloadSRTString = "Download SRT File";
+const String downloadSRTString = "Subtitle File";
 const String userProfileString = "User Profile";
 const String emailString = "Email:";
 const String nameString = "Name:";
@@ -65,7 +65,7 @@ const String audioExtractFailMsg = "Audio Extraction Failed";
 
 BoxDecoration boxDecoration = BoxDecoration(
   border: Border.all(width: 1, color: whiteColor),
-  // color: whiteColor,
+  color: whiteColor,
   borderRadius: BorderRadius.circular(10.0),
   boxShadow: const [
     BoxShadow(
