@@ -475,12 +475,8 @@ class _HomeState extends State<Home> {
         Map<String, dynamic>? userData =
             docSnapshot.data() as Map<String, dynamic>?;
         if (userData != null) {
-          Map<String, dynamic> userDataMap = userData as Map<String, dynamic>;
-          // double currentRemainingTime = userData['remainingTime'] as double;
-          // double currentMonthlyLimit = userData['monthlyLimit'] as double;
-
-          double currentRemainingTime = userDataMap['remainingTime'] as double;
-          double currentMonthlyLimit = userDataMap['monthlyLimit'] as double;
+          double currentRemainingTime = userData['remainingTime'] as double;
+          double currentMonthlyLimit = userData['monthlyLimit'] as double;
 
           if (now.isAfter(nextMonth)) {
             // Reset for a new month
@@ -636,14 +632,6 @@ class _HomeState extends State<Home> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
                   //Import Video Field Start//
-                  Center(
-                    child: Row(
-                      children: const [
-                        Text('Remaining Time:'),
-                        Text('')
-                      ],
-                    ),
-                  ),
                   if (!isVideoExist)
                     Container(
                       margin: EdgeInsets.only(top: width / 1.5),
