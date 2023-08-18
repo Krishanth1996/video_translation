@@ -6,3 +6,4 @@ const Color whiteColor = Colors.white;
 const Color greenColor = Colors.green;
 const Color blackColor = Colors.black;
 const Color redColor = Colors.red;
+const Color lightPurpleColor = Color.fromARGB(255, 201, 193, 202);

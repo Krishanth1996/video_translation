@@ -5,7 +5,6 @@ import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_ffmpeg/flutter_ffmpeg.dart';
 import 'package:get/get.dart';
@@ -14,11 +13,12 @@ import 'package:path_provider/path_provider.dart';
 import 'package:video_player/video_player.dart';
 import 'package:http/http.dart' as http;
 import 'package:video_subtitle_translator/constants.dart';
-import 'package:video_subtitle_translator/remainingTimeWidget.dart';
 import 'package:video_subtitle_translator/services/firebase_services.dart';
+import 'package:video_subtitle_translator/widgets/widgets.dart';
 import 'package:video_subtitle_translator/widgets/loading_screen.dart';
 import 'package:video_subtitle_translator/widgets/showSheet_screen.dart';
 import 'colors.dart';
+import 'package:video_subtitle_translator/widgets/remainingTimeWidget.dart';
 
 class Home extends StatefulWidget {
   const Home({super.key});
@@ -38,7 +38,6 @@ class _HomeState extends State<Home> {
   String subtitles = '';
   String videoId = '';
 
-  TextEditingController videoNameController = TextEditingController();
   TextEditingController subtitleController = TextEditingController();
 
   VideoPlayerController? controller;
@@ -58,6 +57,7 @@ class _HomeState extends State<Home> {
   bool isControlVisible = false;
   bool isVideoPlayerVisible = false;
   bool isVideoDeleting = false;
+  bool isReachedLimit = false;
 
   List<String> extractedAudioPaths = [];
   List<Map<String, dynamic>> subtitleLines = [];
@@ -68,12 +68,18 @@ class _HomeState extends State<Home> {
   Duration currentPosition = Duration.zero;
   Timer? durationTimer;
 
+  double durationInSeconds = 0;
+  double remainingTime = 900;
+
+  final CollectionReference usersCollection =FirebaseFirestore.instance.collection('Remaining_Time');
+
   @override
   void initState() {
     super.initState();
     controller?.addListener(_updateCurrentPosition);
     _startPositionListener();
     loadUserData();
+    saveRemainingTime(0, email);
   }
 
   @override
@@ -87,7 +93,6 @@ class _HomeState extends State<Home> {
   //Loading User Details//
   Future<void> loadUserData() async {
     authService.isUserLoggedIn();
-
     setState(() async {
       displayName = await authService.getDisplayName();
       email = await authService.getEmail();
@@ -222,16 +227,10 @@ class _HomeState extends State<Home> {
       File audioFile = File(outputPath);
       int fileSizeInBytes = await audioFile.length();
       double bitRate = 128000;
-      double durationInSeconds = fileSizeInBytes * 8 / bitRate;
+      durationInSeconds = fileSizeInBytes * 8 / bitRate;
+
       print("Extracted audio duration: $durationInSeconds seconds");
-      if (durationInSeconds <= 900) {
-        // ignore: use_build_context_synchronously
-        showSubtitleSelectionSheet(context);
-        saveRemainingTime(durationInSeconds);
-      } else {
-        // ignore: use_build_context_synchronously
-        showLimitAlert(context);
-      }
+      showSubtitleSelectionSheet(context);
     } else {
       //Audio extraction failed
       Get.snackbar(sorryMsg, audioExtractFailMsg,
@@ -247,7 +246,7 @@ class _HomeState extends State<Home> {
   // Api call for convert text from extracted audio start //
   Future<void> convertAudioToText(String value) async {
     String apiUrl = 'https://transcribe.whisperapi.com';
-    String apiKey = 'NVJN8DFG5LEAW9DNQUZXZA8H96JMY59E';
+    String apiKey = '9C6GBPCL1V8H3DWFSZHID64PUG6SSDZ2';
     String filePath = extractedAudioPaths.last;
     String fileType = 'm4a';
 
@@ -462,18 +461,17 @@ class _HomeState extends State<Home> {
   }
 
   // Save user's remaining time and monthly limit to Firebase Firestore//
-  void saveRemainingTime(double usedTimeInSeconds) {
-    CollectionReference usersCollection =
-        FirebaseFirestore.instance.collection('Remaining_Time');
+  void saveRemainingTime(double usedTimeInSeconds, String? email) {
+    CollectionReference usersCollection =FirebaseFirestore.instance.collection('Remaining_Time');
+    email = _auth.currentUser!.email;
+    String uid = _auth.currentUser!.uid;
 
     DateTime now = DateTime.now();
-    DateTime nextMonth =
-        DateTime(now.year, now.month + 1, 1); // Start of the next month
+    DateTime nextMonth =DateTime(now.year, now.month + 1, 1); // Start of the next month
 
-    usersCollection.doc(email).get().then((docSnapshot) {
+    usersCollection.doc(email).get().then((docSnapshot) async {
       if (docSnapshot.exists) {
-        Map<String, dynamic>? userData =
-            docSnapshot.data() as Map<String, dynamic>?;
+        Map<String, dynamic>? userData =docSnapshot.data() as Map<String, dynamic>?;
         if (userData != null) {
           double currentRemainingTime = userData['remainingTime'] as double;
           double currentMonthlyLimit = userData['monthlyLimit'] as double;
@@ -481,24 +479,35 @@ class _HomeState extends State<Home> {
           if (now.isAfter(nextMonth)) {
             // Reset for a new month
             currentMonthlyLimit = 900.0; // Set the monthly limit to 900 seconds
-            currentRemainingTime =
-                900.0; // Reset remaining time to the new limit
+            currentRemainingTime =900.0; // Reset remaining time to the new limit
           }
 
           double newRemainingTime = currentRemainingTime - usedTimeInSeconds;
 
-          if (newRemainingTime < 0 || usedTimeInSeconds >= 900) {
+          checkReachLimit(newRemainingTime, usedTimeInSeconds);
+          if (newRemainingTime < 0) {
             newRemainingTime = 0;
-            usedTimeInSeconds = 900; // Ensure it doesn't go negative
-            // showLimitAlert(context);
+            // usedTimeInSeconds = 900;
           }
+          setState(() {
+            remainingTime = newRemainingTime;
+          });
 
-          usersCollection.doc(email).update({
+          Map<String, dynamic> updateData = {
             'remainingTime': newRemainingTime,
-            'usedTime': FieldValue.increment(usedTimeInSeconds),
             'timeStamp': FieldValue.serverTimestamp(),
             'monthlyLimit': currentMonthlyLimit, // Update the monthly limit
-          }).then((_) {
+          };
+
+          // Only update usedTime if newRemainingTime is not negative
+          if (newRemainingTime > 0) {
+            updateData['usedTime'] = FieldValue.increment(usedTimeInSeconds);
+          }
+          setState(() {
+            remainingTime = newRemainingTime;
+          });
+
+          usersCollection.doc(email).update(updateData).then((_) {
             print('Remaining time updated for user: $email');
           }).catchError((error) {
             print('Error updating user data: $error');
@@ -522,8 +531,22 @@ class _HomeState extends State<Home> {
       print('Error checking user document: $error');
     });
   }
-  // Save user's remaining time and monthly limit to Firebase Firestore end//
 
+  double checkReachLimit(double newRemainingTime, double usedTimeInSeconds) {
+    if (newRemainingTime < 0 ||
+        usedTimeInSeconds >= 900 ||
+        usedTimeInSeconds > newRemainingTime) {
+      setState(() {
+        isReachedLimit = true;
+      });
+      newRemainingTime = 0;
+      remainingTime = newRemainingTime;
+      // usedTimeInSeconds = 900; // Ensure it doesn't go negative
+    }
+    return newRemainingTime;
+  }
+
+  // Save user's remaining time and monthly limit to Firebase Firestore end//
   Future<bool> _onWillPop() async {
     return false;
   }
@@ -559,65 +582,46 @@ class _HomeState extends State<Home> {
               icon: const Icon(Icons.menu),
               offset: const Offset(0, 48),
               onSelected: (value) {
-                if (value == 'Item 1') {
-                } else if (value == 'Item 2') {
-                } else if (value == 'Item 3') {}
+                if (value == 'Item 1') {} 
+                else if (value == 'Item 2') {} 
+                else if (value == 'Item 3') {}
               },
               itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
                 //Profile Field//
                 PopupMenuItem<String>(
                   padding: const EdgeInsets.only(left: 20, right: 50),
                   value: 'Item 1',
-                  child: Row(
-                    children: [
-                      const Icon(Icons.person, color: primaryColor),
-                      const SizedBox(width: 10),
-                      TextButton(
-                          onPressed: () {
-                            showProfileSheet(
-                              context,
-                            );
-                          },
-                          child: const Text(profileString,
-                              style: TextStyle(color: primaryColor))),
-                    ],
+                  child: RowWIthIconTextbuttonWidget(
+                    onPressed: () {
+                      showProfileSheet(context);
+                    },
+                    icon: Icons.person,
+                    text: profileString,
                   ),
                 ),
                 //Language Field//
                 PopupMenuItem<String>(
                   padding: const EdgeInsets.only(left: 20, right: 50),
                   value: 'Item 2',
-                  child: Row(
-                    children: [
-                      const Icon(Icons.language, color: primaryColor),
-                      const SizedBox(width: 10),
-                      TextButton(
-                          onPressed: () {},
-                          child: const Text(languageString,
-                              style: TextStyle(color: primaryColor)))
-                    ],
+                  child: RowWIthIconTextbuttonWidget(
+                    onPressed: () {},
+                    icon: Icons.language,
+                    text: languageString,
                   ),
                 ),
                 //Logout Field//
                 PopupMenuItem<String>(
                   padding: const EdgeInsets.only(left: 20, right: 50),
                   value: 'Item 3',
-                  child: Row(
-                    children: [
-                      const Icon(Icons.logout, color: primaryColor),
-                      const SizedBox(width: 10),
-                      TextButton(
-                          onPressed: () async {
-                            String title = sureMsg;
-                            String message = askLogoutMsg;
-                            showLogoutAlertDialog(context, title, message);
-                            if (isVideoPlaying) {
-                              controller?.pause();
-                            }
-                          },
-                          child: const Text(logoutString,
-                              style: TextStyle(color: primaryColor))),
-                    ],
+                  child: RowWIthIconTextbuttonWidget(
+                    onPressed: () async {
+                      showLogoutAlertDialog(context);
+                      if (isVideoPlaying) {
+                        controller?.pause();
+                      }
+                    },
+                    icon: Icons.logout,
+                    text: logoutString,
                   ),
                 ),
               ],
@@ -632,210 +636,118 @@ class _HomeState extends State<Home> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
                   //Import Video Field Start//
+                  if (!isVideoExist || isVideoExist)
+                    RemainingTimeWidget(email?? ''),
                   if (!isVideoExist)
                     Container(
-                      margin: EdgeInsets.only(top: width / 1.5),
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                            backgroundColor: primaryColor,
-                            shape: const RoundedRectangleBorder(
-                                borderRadius:BorderRadius.all(Radius.circular(20)),
-                                side: BorderSide(color: primaryColor)),
-                            padding: const EdgeInsets.all(15)),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: const [
-                            Icon(Icons.video_collection, color: whiteColor),
-                            SizedBox(width: 10),
-                            Text(importVideoString,
-                                style: TextStyle(
-                                    color: whiteColor,
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold)),
-                          ],
-                        ),
+                      margin: EdgeInsets.only(top: width / 2),
+                      child: ElevatedButtonCircularWidget(
                         onPressed: () async {
                           getVideo();
                           showLoadingPopup = true;
                         },
+                        backgroundColor:primaryColor,
+                        child:const RowWithIconTextWidget(text: importVideoString,icon: Icons.video_collection,iconColor: whiteColor,textColor: whiteColor,fontSize: 20,),
                       ),
                     ),
                   const SizedBox(height: 16.0),
-
                   //Video Container Field Start//
                   if (isVideoExist)
                     Container(
                       width: width,
-                      // padding: const EdgeInsets.only(top: 10, bottom: 10),
-                      padding: EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                          border: Border.all(
-                              color: const Color.fromARGB(255, 197, 196, 196))),
+                      padding: const EdgeInsets.all(10),
+                      decoration: boxDecoration1,
                       child: Column(
                         children: [
                           Center(
                             child: Container(
                               width: 300,
                               height: 250,
-                              margin: const EdgeInsets.only(
-                                  top: 10, left: 10, right: 10),
-                              decoration: BoxDecoration(
-                                  border: Border.all(color: primaryColor),
-                                  color:
-                                      const Color.fromARGB(255, 201, 193, 202)),
+                              margin: const EdgeInsets.only(top: 10, left: 10, right: 10),
+                              decoration: boxDecoration2,
                               child: Stack(
                                 alignment: Alignment.center,
                                 children: [
                                   Stack(
                                     alignment: Alignment.center,
                                     children: [
-                                      // isVideoExist?
                                       AspectRatio(
-                                        aspectRatio:
-                                            controller!.value.aspectRatio,
+                                        aspectRatio:controller!.value.aspectRatio,
                                         child: GestureDetector(
                                             onTap: () {
                                               setState(() {
-                                                isControlVisible =
-                                                    !isControlVisible;
+                                                isControlVisible =!isControlVisible;
                                               });
                                             },
                                             child: VideoPlayer(controller!)),
                                       )
-                                      // : SizedBox(height: 200,width: 100,child: Image.asset(importImg)),
                                     ],
                                   ),
                                   Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceEvenly,
+                                    mainAxisAlignment:MainAxisAlignment.spaceEvenly,
                                     children: [
-                                      Visibility(
+                                      VideoPlayingIconsWidget(
                                         visible: isControlVisible,
-                                        child: IconButton(
-                                          icon: const Icon(Icons.fast_rewind,
-                                              color: whiteColor, size: 40),
-                                          onPressed: () {
-                                            controller?.seekTo(Duration(
-                                                seconds: controller!.value
-                                                        .position.inSeconds -
-                                                    5));
-                                          },
-                                        ),
+                                        icon: Icons.fast_rewind,
+                                        onPressed: (){controller?.seekTo(Duration(seconds: controller!.value.position.inSeconds -5));},
                                       ),
-                                      Visibility(
+                                      VideoPlayingIconsWidget(
                                         visible: isControlVisible,
-                                        child: IconButton(
-                                          icon: Icon(
-                                              isVideoPlaying
-                                                  ? Icons.pause
-                                                  : Icons.play_arrow,
-                                              color: whiteColor,
-                                              size: 40),
-                                          onPressed: () {
-                                            setState(() {
-                                              if (isVideoPlaying) {
-                                                controller?.pause();
-                                              } else {
-                                                controller?.play();
-                                              }
-                                              isVideoPlaying = !isVideoPlaying;
-                                            });
-                                          },
-                                        ),
-                                      ),
-                                      Visibility(
-                                        visible: isControlVisible,
-                                        child: IconButton(
-                                          icon: const Icon(Icons.fast_forward,
-                                              color: whiteColor, size: 40),
-                                          onPressed: () {
-                                            controller?.seekTo(Duration(
-                                                seconds: controller!.value
-                                                        .position.inSeconds +
-                                                    5));
-                                          },
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  Container(
-                                    margin: const EdgeInsets.only(
-                                        bottom: 20, left: 15),
-                                    child: Align(
-                                      alignment: Alignment.bottomLeft,
-                                      child: isVideoExist
-                                          ? Text(
-                                              "${_formatDuration(controller!.value.position)} / ${_formatDuration(videoDuration)}",
-                                              style: const TextStyle(
-                                                  color: Colors.white,
-                                                  fontSize: 13))
-                                          : const Text('00:00'),
-                                    ),
-                                  ),
-                                  Container(
-                                    margin: const EdgeInsets.only(
-                                        bottom: 10, left: 15),
-                                    child: Align(
-                                      alignment: Alignment.bottomRight,
-                                      child: IconButton(
-                                        icon: Icon(
-                                            isAudioMuted
-                                                ? Icons.volume_off
-                                                : Icons.volume_up,
-                                            color: Colors.white),
+                                        icon: isVideoPlaying? Icons.pause: Icons.play_arrow,
                                         onPressed: () {
                                           setState(() {
-                                            if (isAudioMuted) {
-                                              controller?.setVolume(1.0);
+                                            if (isVideoPlaying) {
+                                              controller?.pause();
                                             } else {
-                                              controller?.setVolume(0.0);
+                                              controller?.play();
                                             }
-                                            isAudioMuted = !isAudioMuted;
+                                            isVideoPlaying = !isVideoPlaying;
                                           });
                                         },
                                       ),
-                                    ),
+                                      VideoPlayingIconsWidget(
+                                        visible: isControlVisible,
+                                        icon: Icons.fast_forward,
+                                        onPressed: (){controller?.seekTo(Duration(seconds: controller!.value.position.inSeconds +5));},
+                                      ),
+                                    ],
                                   ),
-                                  Positioned(
-                                      bottom: 10,
-                                      left: 20,
-                                      right: 20,
-                                      child: buildIndicator()),
+                                  VideoDurationShowWidget(
+                                    text:"${_formatDuration(controller!.value.position)} / ${_formatDuration(videoDuration)}",
+                                  ),
+                                  VideoAudioIconWidget(
+                                    isAudioMuted: isAudioMuted,
+                                    onPressed: () {
+                                      setState(() {
+                                        if (isAudioMuted) {controller?.setVolume(1.0);} 
+                                        else {controller?.setVolume(0.0);}
+                                        isAudioMuted = !isAudioMuted;
+                                      });
+                                    },
+                                  ),
+                                  Positioned(bottom: 10,left: 20,right: 20,child: buildIndicator()),
                                 ],
                               ),
                             ),
                           ),
                           const SizedBox(height: 30),
-                          ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                                backgroundColor: primaryColor,
-                                shape: const RoundedRectangleBorder(
-                                    borderRadius:
-                                        BorderRadius.all(Radius.circular(20))),
-                                padding: const EdgeInsets.all(15),
-                                maximumSize: Size(width - 100, height / 10)),
-                            onPressed: () {
-                              extractAudioFromVideo();
+                          ElevatedButtonCircularWidget(
+                            onPressed: () async {
+                              // saveRemainingTime(durationInSeconds, email);
+                              if (remainingTime <= videoDuration.inSeconds) {
+                                showLimitAlert(context);
+                              } else {
+                                extractAudioFromVideo();
+                              }
                             },
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: const [
-                                Icon(Icons.closed_caption),
-                                SizedBox(width: 10),
-                                Text(createSubtitleString,
-                                    style: TextStyle(
-                                        color: Colors.white, fontSize: 15)),
-                              ],
-                            ),
+                            backgroundColor: primaryColor,
+                            child: const RowWithIconTextWidget(text:createSubtitleString,icon:Icons.closed_caption,iconColor: whiteColor,textColor: whiteColor,fontSize: 20,),
                           ),
                           const SizedBox(height: 10),
                           Column(
                             children: [
-                              if (isTranscribing)
-                                const Center(child: LoadingScreen())
+                              if (isTranscribing)const Center(child: LoadingScreen())
                               else if (subtitles.isNotEmpty)
-
-                                // Text(subtitles),
                                 Container(
                                   height: 200,
                                   margin: const EdgeInsets.all(10),
@@ -844,19 +756,12 @@ class _HomeState extends State<Home> {
                                   child: ListView.builder(
                                     itemCount: subtitleLines.length,
                                     itemBuilder: (context, index) {
-                                      String text =
-                                          subtitleLines[index]['text'];
-                                      double start =
-                                          subtitleLines[index]['start'] * 1000;
-                                      double end =
-                                          subtitleLines[index]['end'] * 1000;
+                                      String text =subtitleLines[index]['text'];
+                                      double start =subtitleLines[index]['start'] * 1000;
+                                      double end =subtitleLines[index]['end'] * 1000;
 
-                                      Duration currentPosition =
-                                          controller!.value.position;
-                                      bool isHighlighted = currentPosition
-                                                  .inMilliseconds >=
-                                              start &&
-                                          currentPosition.inMilliseconds <= end;
+                                      Duration currentPosition =controller!.value.position;
+                                      bool isHighlighted = currentPosition.inMilliseconds >=start &&currentPosition.inMilliseconds <= end;
 
                                       return Row(
                                         mainAxisAlignment: isHighlighted
@@ -867,14 +772,9 @@ class _HomeState extends State<Home> {
                                             child: Text(
                                               text,
                                               style: TextStyle(
-                                                fontSize:
-                                                    isHighlighted ? 17 : 14,
-                                                color: isHighlighted
-                                                    ? Colors.green
-                                                    : blackColor,
-                                                fontWeight: isHighlighted
-                                                    ? FontWeight.bold
-                                                    : FontWeight.normal,
+                                                fontSize:isHighlighted ? 17 : 14,
+                                                color: isHighlighted? Colors.green: blackColor,
+                                                fontWeight: isHighlighted? FontWeight.bold: FontWeight.normal,
                                               ),
                                             ),
                                           ),
@@ -885,66 +785,26 @@ class _HomeState extends State<Home> {
                                 ),
                               const SizedBox(height: 20),
                               Container(
-                                margin: EdgeInsets.only(left: 10),
+                                margin: const EdgeInsets.only(left: 10),
                                 child: Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
+                                  mainAxisAlignment:MainAxisAlignment.spaceBetween,
                                   children: [
-                                    ElevatedButton(
-                                      style: ElevatedButton.styleFrom(
-                                          backgroundColor: whiteColor,
-                                          shape: const RoundedRectangleBorder(
-                                              borderRadius: BorderRadius.all(
-                                                  Radius.circular(20)),
-                                              side: BorderSide(
-                                                  color: primaryColor)),
-                                          padding: const EdgeInsets.all(10)),
+                                    ElevatedButtonCircularWidget(
                                       onPressed: () {
-                                        String title = 'Are you sure to leave?';
-                                        String message =
-                                            'You will not able to revert this';
-                                        showDiscardConfirmAlert(
-                                            context, title, message);
-                                      },
-                                      child: Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        children: const [
-                                          Icon(Icons.delete,
-                                              color: primaryColor),
-                                          SizedBox(width: 5),
-                                          Text(discardString,
-                                              style: TextStyle(
-                                                  color: primaryColor)),
-                                        ],
-                                      ),
+                                        showAlertDialog();
+                                      }, 
+                                      backgroundColor: whiteColor, 
+                                      child: const RowWithIconTextWidget(
+                                        text: discardString,textColor: primaryColor,fontSize: 15,
+                                        icon: Icons.delete,iconColor: primaryColor,
+                                      )
                                     ),
-                                    subtitles.isNotEmpty
-                                        ? ElevatedButton(
-                                            style: ElevatedButton.styleFrom(
-                                                backgroundColor: primaryColor,
-                                                shape:
-                                                    const RoundedRectangleBorder(
-                                                        borderRadius:
-                                                            BorderRadius.all(
-                                                                Radius.circular(
-                                                                    20))),
-                                                padding:
-                                                    const EdgeInsets.all(10)),
-                                            onPressed: () {
-                                              downloadSRTFile();
-                                            },
-                                            child: Row(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment.center,
-                                              children: const [
-                                                Icon(Icons.download),
-                                                SizedBox(width: 5),
-                                                Text(downloadSRTString),
-                                              ],
-                                            ))
-                                        : Container()
-                                    // if (isVideoExist)
+                                    subtitles.isNotEmpty? 
+                                    ElevatedButtonCircularWidget(
+                                      onPressed: (){downloadSRTFile();}, 
+                                      backgroundColor: primaryColor, 
+                                      child: const RowWithIconTextWidget(text: downloadSRTString,icon: Icons.download)
+                                    ): Container()
                                   ],
                                 ),
                               ),
@@ -999,25 +859,10 @@ class _HomeState extends State<Home> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(generateSubtitleMsg,
-                      style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: primaryColor)),
-                  IconButton(
-                      onPressed: () {
-                        Get.back();
-                      },
-                      icon: const Icon(Icons.close, color: primaryColor))
-                ],
-              ),
+              const RowWithTextIconButtonWidget(text: generateSubtitleMsg,),
               const Divider(color: borderColor),
               const SizedBox(height: 20),
-              const Text(selectTranslateLanguageMsg,
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+              const Text(selectTranslateLanguageMsg,style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
                 value: selectedLanguage,
@@ -1068,33 +913,31 @@ class _HomeState extends State<Home> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  ElevatedButton(
+                  ElevatedButtonWidget(
                     onPressed: () async {
                       Get.back(); // Close the bottom sheet
                       await convertAudioToText(selectedLanguage);
+                      saveRemainingTime(durationInSeconds, email);
                     },
-                    style:
-                        ElevatedButton.styleFrom(backgroundColor: primaryColor),
+                    backgroundColor: primaryColor,
                     child: const Text(generateSubtitleString),
                   ),
                   const SizedBox(width: 10),
-                  ElevatedButton(
-                      onPressed: () {
-                        Get.back();
-                      },
-                      style: ElevatedButton.styleFrom(
-                          backgroundColor: borderColor),
-                      child: const Text(closeString)),
+                  ElevatedButtonWidget(
+                    onPressed: () async {
+                      Get.back();
+                    },
+                    backgroundColor: borderColor,
+                    child: const Text(closeString),
+                  ),
                 ],
               ),
-              const SizedBox(
-                height: 10,
-              ),
+              const SizedBox(height: 10),
               const Align(
                 alignment: Alignment.bottomCenter,
                 child: Text(translationMsg,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 12, color: primaryColor)),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12, color: primaryColor)),
               ),
             ],
           ),
@@ -1103,67 +946,55 @@ class _HomeState extends State<Home> {
     );
   }
 
-  void showLimitAlert(BuildContext context) {
-    showDialog(
+  Future<void> showAlertDialog() async {
+    return showDialog<void>(
       context: context,
+      barrierDismissible: false,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: const Text('Monthly Limit Reached'),
-          content: const Text('You have reached your monthly usage limit.'),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-              child: const Text(okString),
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: const [
+              Text(
+                confirmString,
+                style: TextStyle(color: primaryColor, fontSize: 20),
+              ),
+              Divider(color: borderColor),
+              Text(
+                confirmRemoveMsg,
+                style: TextStyle(color: primaryColor, fontSize: 16),
+              )
+            ],
+          ),
+          actions: <Widget>[
+            ElevatedButtonWidget(
+              onPressed: (){
+                Get.back();
+              }, 
+              backgroundColor: borderColor,
+              child: const Text(cancelString,style: TextStyle(color: whiteColor, fontSize: 15))
+            ),
+            ElevatedButtonWidget(
+              onPressed: (){
+                deleteVideo();
+                Get.back();
+              }, 
+              backgroundColor: primaryColor,
+              child: const Text(yesString,style: TextStyle(color: whiteColor, fontSize: 15))
             ),
           ],
         );
       },
     );
   }
-
-  showDiscardConfirmAlert(BuildContext context, String title, String message) {
-    Widget okbtn = Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: [
-        TextButton(
-            onPressed: () {
-              Get.back();
-            },
-            child: const Text(cancelString,
-                style: TextStyle(color: borderColor, fontSize: 18))),
-        TextButton(
-            onPressed: () async {
-              deleteVideo();
-              Get.back();
-            },
-            child: const Text('Discard',
-                style: TextStyle(color: greenColor, fontSize: 18))),
-      ],
-    );
-    AlertDialog alert = AlertDialog(
-      title: Center(
-          child: Column(
-        children: [
-          const CircleAvatar(
-              backgroundColor: Color.fromARGB(255, 197, 196, 196),
-              child: Icon(
-                CupertinoIcons.exclamationmark,
-                color: redColor,
-              )),
-          Text(title, style: const TextStyle(color: redColor, fontSize: 15)),
-        ],
-      )),
-      content: Text(message,
-          textAlign: TextAlign.center,
-          style: const TextStyle(color: primaryColor)),
-      actions: [okbtn],
-    );
-    showDialog(
-        context: context,
-        builder: (BuildContext context) {
-          return alert;
-        });
-  }
 }
+
+
+
+
+
+
+
+
+
+

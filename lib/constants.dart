@@ -19,6 +19,7 @@ const String createSubtitleString = "Create Subtitle";
 const String importVideoString = "Import video";
 const String cancelString = "Cancel";
 const String confirmString = "Confirm";
+const String attemptLogoutString = "Attempting to Logout!";
 const String downloadSRTString = "Subtitle File";
 const String userProfileString = "User Profile";
 const String emailString = "Email:";
@@ -28,6 +29,7 @@ const String verifyString = "Verify";
 const String deleteAccString = "Delete Account";
 const String discardString = "Discard";
 const String yesString = "Yes";
+const String noString = "No";
 const String closeString = "Close";
 const String generateSubtitleString = "Generate Subtitle";
 const String okString = "Ok";
@@ -45,10 +47,11 @@ const String signInSuccessMsg = "Logged In!";
 const String selectVideoMsg = "Please select a video first";
 const String emptyMsg = "Empty";
 const String nameEmptyMsg = "Name is Empty";
-const String sureMsg = "Are you sure!";
-const String askLogoutMsg = "Do you want to logout?";
-const String loadingMsg ="Do not close this page, we are importing the video from your device!..";
-const String select60MVideMsg ="Please select a video with 60 seconds or less.";
+const String askLogoutMsg = "Are you sure you want to logout?";
+const String loadingMsg =
+    "Do not close this page, we are importing the video from your device!..";
+const String select60MVideMsg =
+    "Please select a video with 60 seconds or less.";
 const String noEmailMsg = "Email is not available";
 const String noNameMsg = "Name is not available";
 const String noNumberMsg = "Phone Number is not available";
@@ -56,12 +59,14 @@ const String askTranslateNowMsg = "Do you want to translate this video now?";
 const String generateSubtitleMsg = "Generate Subtitle to this video";
 const String selectTranslateLanguageMsg = "Select Your Translate Language";
 const String selectLanguageMsg = "Select the language you wants";
-const String translationMsg = "You can translate video to English and same language only";
+const String translationMsg ="You can translate video to English and same language only";
 const String enterFieldsMsg = "You should enter this required field";
 const String thankyouMsg = "Thank You";
-const String sorryMsg = "Sorry";
+const String sorryMsg = "Sorry!";
 const String phoneNoUpdateSuccessMsg = "Phone Number Successfully Updated";
 const String audioExtractFailMsg = "Audio Extraction Failed";
+const String confirmRemoveMsg = "Are you sure you want to remove this item?";
+
 
 BoxDecoration boxDecoration = BoxDecoration(
   border: Border.all(width: 1, color: whiteColor),
@@ -76,10 +81,11 @@ BoxDecoration boxDecoration = BoxDecoration(
   ],
 );
 
+BoxDecoration boxDecoration1 = BoxDecoration(
+  border: Border.all(color: lightPurpleColor)
 
+);
 
-
-
-
-
-
+BoxDecoration boxDecoration2 = BoxDecoration(
+  border: Border.all(color: primaryColor),
+    color:lightPurpleColor);

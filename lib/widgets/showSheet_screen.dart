@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import 'package:top_modal_sheet/top_modal_sheet.dart';
 import 'package:video_subtitle_translator/colors.dart';
 import 'package:video_subtitle_translator/services/firebase_services.dart';
+import 'package:video_subtitle_translator/widgets/widgets.dart';
 import '../constants.dart';
 import '../login.dart';
 
@@ -19,15 +20,6 @@ void showProfileSheet(BuildContext context) async {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   String existingPhoneNumber = '';
-  //  if(loginMethod== LoginMethod.Google){
-
-  // DocumentSnapshot userDoc = await _firestore.collection('users').doc(uid).get();
-  // if (userDoc.exists && userDoc.get('phoneNo') != null) {
-  //   existingPhoneNumber = userDoc.get('phoneNo');
-  // }
-  //  } // Initialize with an empty string
-
-
   // ignore: use_build_context_synchronously
   showTopModalSheet(
       context,
@@ -104,38 +96,72 @@ void showProfileSheet(BuildContext context) async {
         ),
       ),
       barrierDismissible: false);
-}
+  }
 
-showLogoutAlertDialog(BuildContext context, String title, String message) {
-  Widget okbtn = Row(
-    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-    children: [
-      TextButton(
-          onPressed: () {
-            Get.back();
-          },
-          child: const Text(cancelString,
-              style: TextStyle(color: borderColor, fontSize: 18))),
-      TextButton(
-          onPressed: () async {
-            await AuthService().signOut();
-            Get.to(const Login());
-          },
-          child: const Text(confirmString,
-              style: TextStyle(color: Colors.green, fontSize: 18))),
-    ],
-  );
-  AlertDialog alert = AlertDialog(
-    title:
-        Center(child: Text(title, style: const TextStyle(color: primaryColor))),
-    content: Text(message,
-        textAlign: TextAlign.center,
-        style: const TextStyle(color: primaryColor)),
-    actions: [okbtn],
-  );
-  showDialog(
+  Future<void> showLogoutAlertDialog(BuildContext context) async {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: const [
+              Text(
+                attemptLogoutString,
+                style: TextStyle(color: primaryColor, fontSize: 20),
+              ),
+              Divider(color: borderColor),
+              Text(
+                askLogoutMsg,
+                style: TextStyle(color: primaryColor, fontSize: 16),
+              )
+            ],
+          ),
+          actions: <Widget>[
+            Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                ElevatedButtonWidget(
+                  onPressed: (){
+                    Get.back();
+                  }, 
+                  backgroundColor: borderColor,
+                  child: const Text(noString,style: TextStyle(color: whiteColor, fontSize: 15))
+                ),
+                ElevatedButtonWidget(
+                  onPressed: () async{
+                   await AuthService().signOut();
+                    Get.to(const Login());
+                  }, 
+                  backgroundColor: primaryColor,
+                  child: const Text(yesString,style: TextStyle(color: whiteColor, fontSize: 15))
+                ),
+              ],
+            ),
+            
+          ],
+        );
+      },
+    );
+  }
+
+  void showLimitAlert(BuildContext context) {
+    showDialog(
       context: context,
       builder: (BuildContext context) {
-        return alert;
-      });
-}
+        return AlertDialog(
+          title: const Text('Monthly Limit Reached'),
+          content: const Text('You have reached your monthly usage limit.'),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: const Text(okString),
+            ),
+          ],
+        );
+      },
+    );
+  }

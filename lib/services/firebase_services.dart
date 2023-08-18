@@ -71,7 +71,7 @@ class AuthService {
 
       if (AuthService().isUserLoggedIn()) {
         // Navigate to home screen
-        WidgetsBinding.instance!.addPostFrameCallback((_) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
           Get.to(const Home());
         });
       }
