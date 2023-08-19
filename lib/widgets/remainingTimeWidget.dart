@@ -3,7 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:video_subtitle_translator/colors.dart';
 
 class RemainingTimeWidget extends StatelessWidget {
-  final String email;
+  final String? email;
 
   const RemainingTimeWidget(this.email, {super.key});
 
@@ -61,13 +61,10 @@ class RemainingTimeWidget extends StatelessWidget {
               ),
             ),
             Text('Used :$formattedUsedPercentage% - $formattedUsedTime min /$formattedMonthlyLimit min'),
-            const SizedBox(
-              height: 20,
-            ),
             Column(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Text('You have only $formattedRemainingTime minutes',style: const TextStyle(color: greenColor,fontSize: 18,fontWeight: FontWeight.bold)),
+                Text('(You have only $formattedRemainingTime minutes)',style: const TextStyle(color: greenColor,fontSize:12,fontWeight: FontWeight.bold)),
               ],
             )
           ],

@@ -17,6 +17,8 @@ import 'package:video_subtitle_translator/services/firebase_services.dart';
 import 'package:video_subtitle_translator/widgets/widgets.dart';
 import 'package:video_subtitle_translator/widgets/loading_screen.dart';
 import 'package:video_subtitle_translator/widgets/showSheet_screen.dart';
+import 'package:youtube_explode_dart/youtube_explode_dart.dart';
+import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'colors.dart';
 import 'package:video_subtitle_translator/widgets/remainingTimeWidget.dart';
 
@@ -41,7 +43,9 @@ class _HomeState extends State<Home> {
   TextEditingController subtitleController = TextEditingController();
 
   VideoPlayerController? controller;
+
   final FlutterFFmpeg flutterFFmpeg = FlutterFFmpeg();
+  YoutubePlayerController? youtubeController;
 
   late Future<void> initializeVideoPlayerFuture;
   late File videoFile;
@@ -58,6 +62,7 @@ class _HomeState extends State<Home> {
   bool isVideoPlayerVisible = false;
   bool isVideoDeleting = false;
   bool isReachedLimit = false;
+  bool isLocalStorageVideo = false;
 
   List<String> extractedAudioPaths = [];
   List<Map<String, dynamic>> subtitleLines = [];
@@ -66,12 +71,14 @@ class _HomeState extends State<Home> {
 
   Duration videoDuration = Duration.zero;
   Duration currentPosition = Duration.zero;
+
   Timer? durationTimer;
 
   double durationInSeconds = 0;
   double remainingTime = 900;
 
-  final CollectionReference usersCollection =FirebaseFirestore.instance.collection('Remaining_Time');
+  final CollectionReference usersCollection =
+      FirebaseFirestore.instance.collection('Remaining_Time');
 
   @override
   void initState() {
@@ -462,16 +469,19 @@ class _HomeState extends State<Home> {
 
   // Save user's remaining time and monthly limit to Firebase Firestore//
   void saveRemainingTime(double usedTimeInSeconds, String? email) {
-    CollectionReference usersCollection =FirebaseFirestore.instance.collection('Remaining_Time');
+    CollectionReference usersCollection =
+        FirebaseFirestore.instance.collection('Remaining_Time');
     email = _auth.currentUser!.email;
     String uid = _auth.currentUser!.uid;
 
     DateTime now = DateTime.now();
-    DateTime nextMonth =DateTime(now.year, now.month + 1, 1); // Start of the next month
+    DateTime nextMonth =
+        DateTime(now.year, now.month + 1, 1); // Start of the next month
 
     usersCollection.doc(email).get().then((docSnapshot) async {
       if (docSnapshot.exists) {
-        Map<String, dynamic>? userData =docSnapshot.data() as Map<String, dynamic>?;
+        Map<String, dynamic>? userData =
+            docSnapshot.data() as Map<String, dynamic>?;
         if (userData != null) {
           double currentRemainingTime = userData['remainingTime'] as double;
           double currentMonthlyLimit = userData['monthlyLimit'] as double;
@@ -479,7 +489,8 @@ class _HomeState extends State<Home> {
           if (now.isAfter(nextMonth)) {
             // Reset for a new month
             currentMonthlyLimit = 900.0; // Set the monthly limit to 900 seconds
-            currentRemainingTime =900.0; // Reset remaining time to the new limit
+            currentRemainingTime =
+                900.0; // Reset remaining time to the new limit
           }
 
           double newRemainingTime = currentRemainingTime - usedTimeInSeconds;
@@ -562,8 +573,135 @@ class _HomeState extends State<Home> {
       if (isVideoPlaying == true) {
         controller?.pause();
       }
+      urlController.clear();
     });
   }
+
+  TextEditingController urlController = TextEditingController();
+  String videoUrl = '';
+
+  Future<void> getYoutubeVideo() async {
+    final videoUrl = urlController.text.trim();
+
+    if (videoUrl.isNotEmpty) {
+      try {
+        final ytExplode = YoutubeExplode();
+        final videoId = YoutubePlayer.convertUrlToId(videoUrl);
+
+        if (videoId != null) {
+          final video = await ytExplode.videos.get(videoId);
+
+          setState(() {
+            youtubeController = YoutubePlayerController(
+              initialVideoId: videoId,
+              flags: const YoutubePlayerFlags(
+                autoPlay: false,
+              ),
+            );
+            isVideoExist = true;
+          });
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Invalid YouTube URL'),
+              backgroundColor: Color.fromARGB(255, 202, 81, 127),
+            ),
+          );
+        }
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('An error occurred: $e'),
+            backgroundColor: const Color.fromARGB(255, 202, 81, 127),
+          ),
+        );
+      }
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter a valid YouTube URL'),
+          backgroundColor: Color.fromARGB(255, 202, 81, 127),
+        ),
+      );
+    }
+  }
+
+  void disposeController() {
+    youtubeController?.dispose();
+  }
+
+  void setVideoController() {
+    disposeController();
+    youtubeController = YoutubePlayerController(
+      initialVideoId: YoutubePlayer.convertUrlToId(videoUrl) ?? '',
+      flags: const YoutubePlayerFlags(autoPlay: false),
+    );
+  }
+
+  Future<void> downloadVideo() async {
+    final videoUrl = urlController.text.trim();
+
+    if (videoUrl.isNotEmpty) {
+      try {
+        final response = await http.get(Uri.parse(videoUrl));
+        if (response.statusCode == 200) {
+          final appDocumentsDir = await getExternalStorageDirectory();
+          final videoFile = File('${appDocumentsDir!.path}/video.mp4');
+          await videoFile.writeAsBytes(response.bodyBytes);
+          print('Path:$videoFile');
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Video downloaded successfully!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to download video.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('An error occurred: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter a valid video URL'),
+          backgroundColor: Color.fromARGB(255, 202, 81, 127),
+        ),
+      );
+    }
+  }
+  
+  //  Future<void> extractAudioFromYoutubeVideo() async {
+  //   final ytExplode = YoutubeExplode();
+  //   final videoId = YoutubePlayer.convertUrlToId(urlController.text);
+
+  //   if (videoId != null) {
+  //     try {
+  //       final video = await ytExplode.videos.get(videoId);
+  //       final audioStream = video.audioStreams.first;
+
+  //       final response = await http.get(Uri.parse(audioStream.url));
+  //       final bytes = response.bodyBytes;
+
+  //       final audioFile = File('audio.mp3');
+  //       await audioFile.writeAsBytes(bytes);
+
+  //       print('Audio extracted and saved as ${audioFile.path}');
+  //     } catch (e) {
+  //       print('An error occurred: $e');
+  //     }
+  //   }
+  // }
 
   @override
   Widget build(BuildContext context) {
@@ -582,9 +720,9 @@ class _HomeState extends State<Home> {
               icon: const Icon(Icons.menu),
               offset: const Offset(0, 48),
               onSelected: (value) {
-                if (value == 'Item 1') {} 
-                else if (value == 'Item 2') {} 
-                else if (value == 'Item 3') {}
+                if (value == 'Item 1') {
+                } else if (value == 'Item 2') {
+                } else if (value == 'Item 3') {}
               },
               itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
                 //Profile Field//
@@ -637,17 +775,70 @@ class _HomeState extends State<Home> {
                 children: <Widget>[
                   //Import Video Field Start//
                   if (!isVideoExist || isVideoExist)
-                    RemainingTimeWidget(email?? ''),
+                    RemainingTimeWidget(_auth.currentUser!.email),
                   if (!isVideoExist)
                     Container(
-                      margin: EdgeInsets.only(top: width / 2),
-                      child: ElevatedButtonCircularWidget(
-                        onPressed: () async {
-                          getVideo();
-                          showLoadingPopup = true;
-                        },
-                        backgroundColor:primaryColor,
-                        child:const RowWithIconTextWidget(text: importVideoString,icon: Icons.video_collection,iconColor: whiteColor,textColor: whiteColor,fontSize: 20,),
+                      margin: EdgeInsets.only(top: width / 2.2),
+                      child: Column(
+                        children: [
+                          //Import Video Field//
+                          ElevatedButtonCircularWidget(
+                            onPressed: () async {
+                              isLocalStorageVideo = true;
+                              getVideo();
+                              showLoadingPopup = true;
+                            },
+                            backgroundColor: primaryColor,
+                            child: const RowWithIconTextWidget(
+                              text: importVideoString,
+                              icon: Icons.video_collection,
+                              iconSize: 20,
+                              iconColor: whiteColor,
+                              textColor: whiteColor,
+                              fontSize: 20,
+                            ),
+                          ),
+                          //Import Video Field End//
+                          const SizedBox(height: 20),
+                          //Import Video URL Field//
+                          TextField(
+                            controller: urlController,
+                            onChanged: (value) {
+                              setState(() {
+                                videoUrl = value;
+                                isVideoExist = false;
+                              });
+                            },
+                            decoration: InputDecoration(
+                                labelText: 'Import URL',
+                                labelStyle:
+                                    const TextStyle(color: primaryColor),
+                                enabledBorder: const OutlineInputBorder(
+                                  borderSide: BorderSide(color: Colors.black),
+                                  borderRadius:
+                                      BorderRadius.all(Radius.circular(20)),
+                                ),
+                                focusedBorder: const OutlineInputBorder(
+                                  borderSide: BorderSide(color: Colors.black),
+                                  borderRadius:
+                                      BorderRadius.all(Radius.circular(20)),
+                                ),
+                                prefixIcon:
+                                    const Icon(Icons.link, color: primaryColor),
+                                suffixIcon: IconButton(
+                                    onPressed: () {
+                                      isLocalStorageVideo = false;
+                                      getYoutubeVideo();
+                                      setVideoController();
+                                    },
+                                    // icon: Icon(Icons.arrow_circle_right_rounded )
+                                    icon: const Icon(
+                                      Icons.send,
+                                      color: primaryColor,
+                                    ))),
+                          ),
+                          //Import Video URL Field End//
+                        ],
                       ),
                     ),
                   const SizedBox(height: 16.0),
@@ -663,69 +854,125 @@ class _HomeState extends State<Home> {
                             child: Container(
                               width: 300,
                               height: 250,
-                              margin: const EdgeInsets.only(top: 10, left: 10, right: 10),
+                              margin: const EdgeInsets.only(
+                                  top: 10, left: 10, right: 10),
                               decoration: boxDecoration2,
                               child: Stack(
                                 alignment: Alignment.center,
                                 children: [
-                                  Stack(
-                                    alignment: Alignment.center,
-                                    children: [
-                                      AspectRatio(
-                                        aspectRatio:controller!.value.aspectRatio,
-                                        child: GestureDetector(
-                                            onTap: () {
-                                              setState(() {
-                                                isControlVisible =!isControlVisible;
-                                              });
-                                            },
-                                            child: VideoPlayer(controller!)),
-                                      )
-                                    ],
-                                  ),
+                                  if (isLocalStorageVideo)
+                                    Stack(
+                                      alignment: Alignment.center,
+                                      children: [
+                                        AspectRatio(
+                                          aspectRatio:
+                                              controller!.value.aspectRatio,
+                                          child: GestureDetector(
+                                              onTap: () {
+                                                setState(() {
+                                                  isControlVisible =
+                                                      !isControlVisible;
+                                                });
+                                              },
+                                              child: VideoPlayer(controller!)),
+                                        )
+                                      ],
+                                    )
+                                  else
+                                    Container(
+                                      width: 300,
+                                      height: 250,
+                                      decoration: BoxDecoration(
+                                        border: Border.all(color: Colors.black),
+                                        borderRadius: const BorderRadius.all(
+                                            Radius.circular(20)),
+                                      ),
+                                      child: youtubeController != null
+                                          ? YoutubePlayer(
+                                              controller: youtubeController!,
+                                              showVideoProgressIndicator: true,
+                                              progressIndicatorColor:
+                                                  Colors.blue,
+                                              progressColors:
+                                                  const ProgressBarColors(
+                                                playedColor: Colors.red,
+                                                handleColor: Colors.black,
+                                              ),
+                                            )
+                                          : const Center(
+                                              child:
+                                                  CircularProgressIndicator(),
+                                            ),
+                                    ),
                                   Row(
-                                    mainAxisAlignment:MainAxisAlignment.spaceEvenly,
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceEvenly,
                                     children: [
                                       VideoPlayingIconsWidget(
                                         visible: isControlVisible,
                                         icon: Icons.fast_rewind,
-                                        onPressed: (){controller?.seekTo(Duration(seconds: controller!.value.position.inSeconds -5));},
-                                      ),
-                                      VideoPlayingIconsWidget(
-                                        visible: isControlVisible,
-                                        icon: isVideoPlaying? Icons.pause: Icons.play_arrow,
                                         onPressed: () {
-                                          setState(() {
-                                            if (isVideoPlaying) {
-                                              controller?.pause();
-                                            } else {
-                                              controller?.play();
-                                            }
-                                            isVideoPlaying = !isVideoPlaying;
-                                          });
+                                          controller?.seekTo(Duration(
+                                              seconds: controller!.value
+                                                      .position.inSeconds -
+                                                  5));
                                         },
                                       ),
+                                      if (isLocalStorageVideo)
+                                        VideoPlayingIconsWidget(
+                                          visible: isControlVisible,
+                                          icon: isVideoPlaying
+                                              ? Icons.pause
+                                              : Icons.play_arrow,
+                                          onPressed: () {
+                                            setState(() {
+                                              if (isVideoPlaying) {
+                                                controller?.pause();
+                                              } else {
+                                                controller?.play();
+                                              }
+                                              isVideoPlaying = !isVideoPlaying;
+                                            });
+                                          },
+                                        ),
                                       VideoPlayingIconsWidget(
                                         visible: isControlVisible,
                                         icon: Icons.fast_forward,
-                                        onPressed: (){controller?.seekTo(Duration(seconds: controller!.value.position.inSeconds +5));},
+                                        onPressed: () {
+                                          controller?.seekTo(Duration(
+                                              seconds: controller!.value
+                                                      .position.inSeconds +
+                                                  5));
+                                        },
                                       ),
                                     ],
                                   ),
-                                  VideoDurationShowWidget(
-                                    text:"${_formatDuration(controller!.value.position)} / ${_formatDuration(videoDuration)}",
-                                  ),
+                                  if (isLocalStorageVideo)
+                                    VideoDurationShowWidget(
+                                      text:
+                                          "${_formatDuration(controller!.value.position)} / ${_formatDuration(videoDuration)}",
+                                    ),
                                   VideoAudioIconWidget(
                                     isAudioMuted: isAudioMuted,
                                     onPressed: () {
                                       setState(() {
-                                        if (isAudioMuted) {controller?.setVolume(1.0);} 
-                                        else {controller?.setVolume(0.0);}
+                                        if (isAudioMuted) {
+                                          controller?.setVolume(1.0);
+                                          youtubeController?.setVolume(1);
+                                        } else {
+                                          controller?.setVolume(0.0);
+                                          youtubeController?.setVolume(0);
+                                        }
                                         isAudioMuted = !isAudioMuted;
                                       });
                                     },
                                   ),
-                                  Positioned(bottom: 10,left: 20,right: 20,child: buildIndicator()),
+                                  if (isLocalStorageVideo)
+                                    Positioned(
+                                        bottom: 10,
+                                        left: 20,
+                                        right: 20,
+                                        child: buildIndicator()),
                                 ],
                               ),
                             ),
@@ -741,12 +988,32 @@ class _HomeState extends State<Home> {
                               }
                             },
                             backgroundColor: primaryColor,
-                            child: const RowWithIconTextWidget(text:createSubtitleString,icon:Icons.closed_caption,iconColor: whiteColor,textColor: whiteColor,fontSize: 20,),
+                            child: const RowWithIconTextWidget(
+                              text: createSubtitleString,
+                              icon: Icons.closed_caption,
+                              iconColor: whiteColor,
+                              textColor: whiteColor,
+                              fontSize: 20,
+                            ),
                           ),
                           const SizedBox(height: 10),
+                          ElevatedButtonCircularWidget(
+                            onPressed: () async {
+                              downloadVideo();
+                            },
+                            backgroundColor: primaryColor,
+                            child: const RowWithIconTextWidget(
+                              text: 'Download',
+                              icon: Icons.closed_caption,
+                              iconColor: whiteColor,
+                              textColor: whiteColor,
+                              fontSize: 20,
+                            ),
+                          ),
                           Column(
                             children: [
-                              if (isTranscribing)const Center(child: LoadingScreen())
+                              if (isTranscribing)
+                                const Center(child: LoadingScreen())
                               else if (subtitles.isNotEmpty)
                                 Container(
                                   height: 200,
@@ -756,12 +1023,19 @@ class _HomeState extends State<Home> {
                                   child: ListView.builder(
                                     itemCount: subtitleLines.length,
                                     itemBuilder: (context, index) {
-                                      String text =subtitleLines[index]['text'];
-                                      double start =subtitleLines[index]['start'] * 1000;
-                                      double end =subtitleLines[index]['end'] * 1000;
+                                      String text =
+                                          subtitleLines[index]['text'];
+                                      double start =
+                                          subtitleLines[index]['start'] * 1000;
+                                      double end =
+                                          subtitleLines[index]['end'] * 1000;
 
-                                      Duration currentPosition =controller!.value.position;
-                                      bool isHighlighted = currentPosition.inMilliseconds >=start &&currentPosition.inMilliseconds <= end;
+                                      Duration currentPosition =
+                                          controller!.value.position;
+                                      bool isHighlighted = currentPosition
+                                                  .inMilliseconds >=
+                                              start &&
+                                          currentPosition.inMilliseconds <= end;
 
                                       return Row(
                                         mainAxisAlignment: isHighlighted
@@ -772,12 +1046,18 @@ class _HomeState extends State<Home> {
                                             child: Text(
                                               text,
                                               style: TextStyle(
-                                                fontSize:isHighlighted ? 17 : 14,
-                                                color: isHighlighted? Colors.green: blackColor,
-                                                fontWeight: isHighlighted? FontWeight.bold: FontWeight.normal,
+                                                fontSize:
+                                                    isHighlighted ? 17 : 14,
+                                                color: isHighlighted
+                                                    ? Colors.green
+                                                    : blackColor,
+                                                fontWeight: isHighlighted
+                                                    ? FontWeight.bold
+                                                    : FontWeight.normal,
                                               ),
                                             ),
                                           ),
+                                          const SizedBox(height: 25)
                                         ],
                                       );
                                     },
@@ -787,24 +1067,31 @@ class _HomeState extends State<Home> {
                               Container(
                                 margin: const EdgeInsets.only(left: 10),
                                 child: Row(
-                                  mainAxisAlignment:MainAxisAlignment.spaceBetween,
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
                                   children: [
                                     ElevatedButtonCircularWidget(
-                                      onPressed: () {
-                                        showAlertDialog();
-                                      }, 
-                                      backgroundColor: whiteColor, 
-                                      child: const RowWithIconTextWidget(
-                                        text: discardString,textColor: primaryColor,fontSize: 15,
-                                        icon: Icons.delete,iconColor: primaryColor,
-                                      )
-                                    ),
-                                    subtitles.isNotEmpty? 
-                                    ElevatedButtonCircularWidget(
-                                      onPressed: (){downloadSRTFile();}, 
-                                      backgroundColor: primaryColor, 
-                                      child: const RowWithIconTextWidget(text: downloadSRTString,icon: Icons.download)
-                                    ): Container()
+                                        onPressed: () {
+                                          showAlertDialog();
+                                        },
+                                        backgroundColor: whiteColor,
+                                        child: const RowWithIconTextWidget(
+                                          text: discardString,
+                                          textColor: primaryColor,
+                                          fontSize: 15,
+                                          icon: Icons.delete,
+                                          iconColor: primaryColor,
+                                        )),
+                                    subtitles.isNotEmpty
+                                        ? ElevatedButtonCircularWidget(
+                                            onPressed: () {
+                                              downloadSRTFile();
+                                            },
+                                            backgroundColor: primaryColor,
+                                            child: const RowWithIconTextWidget(
+                                                text: downloadSRTString,
+                                                icon: Icons.download))
+                                        : Container()
                                   ],
                                 ),
                               ),
@@ -859,10 +1146,13 @@ class _HomeState extends State<Home> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const RowWithTextIconButtonWidget(text: generateSubtitleMsg,),
+              const RowWithTextIconButtonWidget(
+                text: generateSubtitleMsg,
+              ),
               const Divider(color: borderColor),
               const SizedBox(height: 20),
-              const Text(selectTranslateLanguageMsg,style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+              const Text(selectTranslateLanguageMsg,
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
                 value: selectedLanguage,
@@ -936,8 +1226,8 @@ class _HomeState extends State<Home> {
               const Align(
                 alignment: Alignment.bottomCenter,
                 child: Text(translationMsg,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 12, color: primaryColor)),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 12, color: primaryColor)),
               ),
             ],
           ),
@@ -968,33 +1258,23 @@ class _HomeState extends State<Home> {
           ),
           actions: <Widget>[
             ElevatedButtonWidget(
-              onPressed: (){
-                Get.back();
-              }, 
-              backgroundColor: borderColor,
-              child: const Text(cancelString,style: TextStyle(color: whiteColor, fontSize: 15))
-            ),
+                onPressed: () {
+                  Get.back();
+                },
+                backgroundColor: borderColor,
+                child: const Text(cancelString,
+                    style: TextStyle(color: whiteColor, fontSize: 15))),
             ElevatedButtonWidget(
-              onPressed: (){
-                deleteVideo();
-                Get.back();
-              }, 
-              backgroundColor: primaryColor,
-              child: const Text(yesString,style: TextStyle(color: whiteColor, fontSize: 15))
-            ),
+                onPressed: () {
+                  deleteVideo();
+                  Get.back();
+                },
+                backgroundColor: primaryColor,
+                child: const Text(yesString,
+                    style: TextStyle(color: whiteColor, fontSize: 15))),
           ],
         );
       },
     );
   }
 }
-
-
-
-
-
-
-
-
-
-

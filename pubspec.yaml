@@ -50,6 +50,9 @@ dependencies:
   google_sign_in: ^6.1.4
   pinput: ^3.0.0
   http: ^0.13.6
+  youtube_player_flutter: ^8.1.2
+  youtube_explode_dart: ^1.12.4
+  flutter_sound: ^9.2.13
 
 dev_dependencies:
   flutter_test:

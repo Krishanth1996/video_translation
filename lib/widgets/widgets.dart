@@ -140,20 +140,23 @@ class RowWithIconTextWidget extends StatelessWidget {
   final Color? iconColor;
   final Color? textColor;
   final double? fontSize;
+  final double? iconSize;
   const RowWithIconTextWidget(
       {super.key,
       required this.text,
       required this.icon,
       this.iconColor,
       this.textColor,
-      this.fontSize});
+      this.fontSize,
+      this.iconSize
+    });
 
   @override
   Widget build(BuildContext context) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Icon(icon, color: iconColor),
+        Icon(icon, color: iconColor,size: iconSize,),
         const SizedBox(width: 10),
         Text(text, style: TextStyle(color: textColor, fontSize: fontSize)),
       ],
