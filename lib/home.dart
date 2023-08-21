@@ -65,6 +65,8 @@ class _HomeState extends State<Home> {
   bool isLocalStorageVideo = false;
 
   List<String> extractedAudioPaths = [];
+  List<String> downloadedVideoPaths = [];
+
   List<Map<String, dynamic>> subtitleLines = [];
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -253,7 +255,7 @@ class _HomeState extends State<Home> {
   // Api call for convert text from extracted audio start //
   Future<void> convertAudioToText(String value) async {
     String apiUrl = 'https://transcribe.whisperapi.com';
-    String apiKey = '9C6GBPCL1V8H3DWFSZHID64PUG6SSDZ2';
+    String apiKey = '4F6TEV6NR42DZ952CINTHBIS36KKB2DV';
     String filePath = extractedAudioPaths.last;
     String fileType = 'm4a';
 
@@ -372,9 +374,9 @@ class _HomeState extends State<Home> {
     StringBuffer srtContent = StringBuffer();
     for (int i = 0; i < lines.length; i++) {
       srtContent.writeln((i + 1).toString());
-      // srtContent.writeln('00:00:00,000 --> 00:00:01,000');
-      srtContent.writeln();
+      srtContent.writeln('00:00:00,000 --> 00:00:01,000');
       srtContent.writeln(lines[i]);
+      srtContent.writeln();
     }
     return srtContent.toString();
   }
@@ -638,30 +640,23 @@ class _HomeState extends State<Home> {
     );
   }
 
-  Future<void> downloadVideo() async {
+  Future<void> downloadYoutubeVideo() async {
     final videoUrl = urlController.text.trim();
-
     if (videoUrl.isNotEmpty) {
       try {
         final response = await http.get(Uri.parse(videoUrl));
         if (response.statusCode == 200) {
           final appDocumentsDir = await getExternalStorageDirectory();
-          final videoFile = File('${appDocumentsDir!.path}/video.mp4');
+          String outputPath =
+              '${appDocumentsDir?.path}/video${DateTime.now().millisecondsSinceEpoch}.mp4';
+          final videoFile = File('${appDocumentsDir?.path}/video.mp4');
           await videoFile.writeAsBytes(response.bodyBytes);
-          print('Path:$videoFile');
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Video downloaded successfully!'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Failed to download video.'),
-              backgroundColor: Colors.red,
-            ),
-          );
+
+          setState(() {
+            downloadedVideoPaths.add(outputPath);
+          });
+          print('Downloaded Path:$videoFile');
+          print('Video downloaded successfully!');
         }
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -680,28 +675,51 @@ class _HomeState extends State<Home> {
       );
     }
   }
-  
-  //  Future<void> extractAudioFromYoutubeVideo() async {
-  //   final ytExplode = YoutubeExplode();
-  //   final videoId = YoutubePlayer.convertUrlToId(urlController.text);
 
-  //   if (videoId != null) {
-  //     try {
-  //       final video = await ytExplode.videos.get(videoId);
-  //       final audioStream = video.audioStreams.first;
+  final yt = YoutubeExplode();
 
-  //       final response = await http.get(Uri.parse(audioStream.url));
-  //       final bytes = response.bodyBytes;
+  Future<void> fetchVideoInfoAndExtractAudio(String videoUrl) async {
+    final youtube = YoutubeExplode();
 
-  //       final audioFile = File('audio.mp3');
-  //       await audioFile.writeAsBytes(bytes);
+    final videoId = YoutubePlayer.convertUrlToId(videoUrl);
+    var manifest = await youtube.videos.streamsClient.getManifest(videoId);
+    var streams = manifest.audioOnly;
 
-  //       print('Audio extracted and saved as ${audioFile.path}');
-  //     } catch (e) {
-  //       print('An error occurred: $e');
-  //     }
-  //   }
-  // }
+    // Get the audio track with the highest bitrate.
+    var audio = streams.first;
+
+    // Get the audio stream URL
+    Uri audioStreamUrl = audio.url;
+
+    youtube.close();
+
+    // Call the function to start audio extraction
+    await extractAudioFromUrl(audioStreamUrl.toString());
+  }
+
+  Future<void> extractAudioFromUrl(String audioStreamUrl) async {
+    final flutterFFmpeg = FlutterFFmpeg();
+    String videoFilePath = downloadedVideoPaths.last;
+    String directoryPath = videoFilePath.replaceAll(RegExp(r'/[^/]*$'), '');
+    final outputPath =
+        '$directoryPath/audio${DateTime.now().millisecondsSinceEpoch}.m4a';
+    setState(() {
+      extractedAudioPaths.add(outputPath);
+    });
+    final arguments = [
+      '-i', audioStreamUrl,
+      '-vn', // Disable video
+      '-c:a', 'aac', // Use the AAC codec
+      outputPath,
+    ];
+
+    final result = await flutterFFmpeg.executeWithArguments(arguments);
+    print('FFmpeg Result: $result');
+    uploadAudioFileToStorage(outputPath, videoId);
+    showSubtitleSelectionSheet(context);
+
+    // flutterFFmpeg.close();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -978,43 +996,103 @@ class _HomeState extends State<Home> {
                             ),
                           ),
                           const SizedBox(height: 30),
-                          ElevatedButtonCircularWidget(
-                            onPressed: () async {
-                              // saveRemainingTime(durationInSeconds, email);
-                              if (remainingTime <= videoDuration.inSeconds) {
-                                showLimitAlert(context);
-                              } else {
-                                extractAudioFromVideo();
-                              }
-                            },
-                            backgroundColor: primaryColor,
-                            child: const RowWithIconTextWidget(
-                              text: createSubtitleString,
-                              icon: Icons.closed_caption,
-                              iconColor: whiteColor,
-                              textColor: whiteColor,
-                              fontSize: 20,
+                          if (isLocalStorageVideo)
+                            ElevatedButtonCircularWidget(
+                              onPressed: () async {
+                                // saveRemainingTime(durationInSeconds, email);
+                                if (remainingTime <= videoDuration.inSeconds) {
+                                  showLimitAlert(context);
+                                } else {
+                                  if (isLocalStorageVideo) {
+                                    extractAudioFromVideo();
+                                  } else {
+                                    // downloadVideo();
+                                  }
+                                }
+                              },
+                              backgroundColor: primaryColor,
+                              child: const RowWithIconTextWidget(
+                                text: createSubtitleString,
+                                icon: Icons.closed_caption,
+                                iconColor: whiteColor,
+                                textColor: whiteColor,
+                                fontSize: 20,
+                              ),
                             ),
-                          ),
                           const SizedBox(height: 10),
-                          ElevatedButtonCircularWidget(
-                            onPressed: () async {
-                              downloadVideo();
-                            },
-                            backgroundColor: primaryColor,
-                            child: const RowWithIconTextWidget(
-                              text: 'Download',
-                              icon: Icons.closed_caption,
-                              iconColor: whiteColor,
-                              textColor: whiteColor,
-                              fontSize: 20,
+                          if (!isLocalStorageVideo)
+                            ElevatedButtonCircularWidget(
+                              onPressed: () async {
+                                downloadYoutubeVideo();
+                                fetchVideoInfoAndExtractAudio(urlController.text);
+                              },
+                              backgroundColor: primaryColor,
+                              child: const RowWithIconTextWidget(
+                                text: createSubtitleString,
+                                icon: Icons.closed_caption,
+                                iconColor: whiteColor,
+                                textColor: whiteColor,
+                                fontSize: 20,
+                              ),
                             ),
-                          ),
+                          const SizedBox(height: 10),
                           Column(
                             children: [
                               if (isTranscribing)
                                 const Center(child: LoadingScreen())
                               else if (subtitles.isNotEmpty)
+                                if (isLocalStorageVideo)
+                                  Container(
+                                    height: 200,
+                                    margin: const EdgeInsets.all(10),
+                                    decoration: boxDecoration,
+                                    padding: const EdgeInsets.all(15),
+                                    child: ListView.builder(
+                                      itemCount: subtitleLines.length,
+                                      itemBuilder: (context, index) {
+                                        String text =
+                                            subtitleLines[index]['text'];
+                                        double start = subtitleLines[index]
+                                                ['start'] *
+                                            1000;
+                                        double end =
+                                            subtitleLines[index]['end'] * 1000;
+
+                                        Duration currentPosition =
+                                            controller!.value.position;
+                                        bool isHighlighted = currentPosition
+                                                    .inMilliseconds >=
+                                                start &&
+                                            currentPosition.inMilliseconds <=
+                                                end;
+
+                                        return Row(
+                                          mainAxisAlignment: isHighlighted
+                                              ? MainAxisAlignment.center
+                                              : MainAxisAlignment.center,
+                                          children: [
+                                            Flexible(
+                                              child: Text(
+                                                text,
+                                                style: TextStyle(
+                                                  fontSize:
+                                                      isHighlighted ? 17 : 14,
+                                                  color: isHighlighted
+                                                      ? Colors.green
+                                                      : blackColor,
+                                                  fontWeight: isHighlighted
+                                                      ? FontWeight.bold
+                                                      : FontWeight.normal,
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(height: 25)
+                                          ],
+                                        );
+                                      },
+                                    ),
+                                  ),
+                              if (!isLocalStorageVideo)
                                 Container(
                                   height: 200,
                                   margin: const EdgeInsets.all(10),
@@ -1031,7 +1109,7 @@ class _HomeState extends State<Home> {
                                           subtitleLines[index]['end'] * 1000;
 
                                       Duration currentPosition =
-                                          controller!.value.position;
+                                          youtubeController!.value.position;
                                       bool isHighlighted = currentPosition
                                                   .inMilliseconds >=
                                               start &&
@@ -1047,7 +1125,7 @@ class _HomeState extends State<Home> {
                                               text,
                                               style: TextStyle(
                                                 fontSize:
-                                                    isHighlighted ? 17 : 14,
+                                                    isHighlighted ? 15 : 14,
                                                 color: isHighlighted
                                                     ? Colors.green
                                                     : blackColor,
@@ -1203,15 +1281,27 @@ class _HomeState extends State<Home> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  ElevatedButtonWidget(
-                    onPressed: () async {
-                      Get.back(); // Close the bottom sheet
-                      await convertAudioToText(selectedLanguage);
-                      saveRemainingTime(durationInSeconds, email);
-                    },
-                    backgroundColor: primaryColor,
-                    child: const Text(generateSubtitleString),
-                  ),
+                  if (isLocalStorageVideo)
+                    ElevatedButtonWidget(
+                      onPressed: () async {
+                        Get.back(); // Close the bottom sheet
+                        await convertAudioToText(selectedLanguage);
+                        saveRemainingTime(durationInSeconds, email);
+                      },
+                      backgroundColor: primaryColor,
+                      child: const Text(generateSubtitleString),
+                    ),
+                  const SizedBox(width: 10),
+                  if (!isLocalStorageVideo)
+                    ElevatedButtonWidget(
+                      onPressed: () async {
+                        Get.back(); // Close the bottom sheet
+                        await convertAudioToText(selectedLanguage);
+                        saveRemainingTime(durationInSeconds, email);
+                      },
+                      backgroundColor: primaryColor,
+                      child: const Text(generateSubtitleString),
+                    ),
                   const SizedBox(width: 10),
                   ElevatedButtonWidget(
                     onPressed: () async {

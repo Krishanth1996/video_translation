@@ -312,7 +312,7 @@ class _LoginState extends State<Login> {
                       onPressed: () async {
                         await authService.savePhoneNo(phoneController.text);
                         Get.back();
-                        Get.snackbar(thankyouMsg,phoneNoUpdateSuccessMsg,colorText: greenColor,snackPosition: SnackPosition.BOTTOM);
+                        Get.snackbar(thankyouMsg,phoneNoUpdateSuccessMsg,colorText: primaryColor,snackPosition: SnackPosition.BOTTOM);
                         showProfileSheet(context);
                       },
                       style: ElevatedButton.styleFrom(backgroundColor: primaryColor),
