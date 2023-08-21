@@ -571,11 +571,11 @@ class _HomeState extends State<Home> {
       isControlVisible = false;
       isAudioMuted = false;
       isVideoDeleting = true;
-      subtitles = '';
       if (isVideoPlaying == true) {
         controller?.pause();
       }
       urlController.clear();
+      subtitleLines = [];
     });
   }
 
@@ -849,11 +849,8 @@ class _HomeState extends State<Home> {
                                       getYoutubeVideo();
                                       setVideoController();
                                     },
-                                    // icon: Icon(Icons.arrow_circle_right_rounded )
-                                    icon: const Icon(
-                                      Icons.send,
-                                      color: primaryColor,
-                                    ))),
+                                    icon: const Icon(Icons.send,
+                                        color: primaryColor))),
                           ),
                           //Import Video URL Field End//
                         ],
@@ -970,21 +967,34 @@ class _HomeState extends State<Home> {
                                       text:
                                           "${_formatDuration(controller!.value.position)} / ${_formatDuration(videoDuration)}",
                                     ),
-                                  VideoAudioIconWidget(
-                                    isAudioMuted: isAudioMuted,
-                                    onPressed: () {
-                                      setState(() {
-                                        if (isAudioMuted) {
-                                          controller?.setVolume(1.0);
-                                          youtubeController?.setVolume(1);
-                                        } else {
-                                          controller?.setVolume(0.0);
-                                          youtubeController?.setVolume(0);
-                                        }
-                                        isAudioMuted = !isAudioMuted;
-                                      });
-                                    },
-                                  ),
+                                  if (isLocalStorageVideo)
+                                    VideoAudioIconWidget(
+                                      isAudioMuted: isAudioMuted,
+                                      onPressed: () {
+                                        setState(() {
+                                          if (isAudioMuted) {
+                                            controller?.setVolume(1.0);
+                                          } else {
+                                            controller?.setVolume(0.0);
+                                          }
+                                          isAudioMuted = !isAudioMuted;
+                                        });
+                                      },
+                                    ),
+                                  if (!isLocalStorageVideo)
+                                    VideoAudioIconWidget(
+                                      isAudioMuted: isAudioMuted,
+                                      onPressed: () {
+                                        setState(() {
+                                          if (isAudioMuted) {
+                                            youtubeController?.setVolume(1);
+                                          } else {
+                                            youtubeController?.setVolume(0);
+                                          }
+                                          isAudioMuted = !isAudioMuted;
+                                        });
+                                      },
+                                    ),
                                   if (isLocalStorageVideo)
                                     Positioned(
                                         bottom: 10,
@@ -1024,7 +1034,8 @@ class _HomeState extends State<Home> {
                             ElevatedButtonCircularWidget(
                               onPressed: () async {
                                 downloadYoutubeVideo();
-                                fetchVideoInfoAndExtractAudio(urlController.text);
+                                fetchVideoInfoAndExtractAudio(
+                                    urlController.text);
                               },
                               backgroundColor: primaryColor,
                               child: const RowWithIconTextWidget(
@@ -1093,6 +1104,7 @@ class _HomeState extends State<Home> {
                                     ),
                                   ),
                               if (!isLocalStorageVideo)
+                              if(subtitles.isNotEmpty)
                                 Container(
                                   height: 200,
                                   margin: const EdgeInsets.all(10),
