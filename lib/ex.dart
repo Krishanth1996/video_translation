@@ -380,3 +380,181 @@
 //     );
 //   }
 // }
+
+
+// final DatabaseReference _videoRef = FirebaseDatabase.instance.reference().child('videos');
+
+//   void saveVideoDetails(String videoUrl, List<Map<String, dynamic>> subtitles) {
+//     final user = FirebaseAuth.instance.currentUser;
+//     if (user != null) {
+//       final newVideoRef = _videoRef.child(user.uid).push();
+//       newVideoRef.set({
+//         'videoUrl': videoUrl,
+//         'subtitles': subtitles,
+//         'timestamp': DateTime.now().toUtc().millisecondsSinceEpoch,
+//         // Add other video details here
+//       }).then((_) {
+//         print('Video details saved successfully.');
+//       }).catchError((error) {
+//         print('Error saving video details: $error');
+//       });
+//     }
+//   }
+
+
+// void showProfileSheet(BuildContext context) async {
+//   AuthService authService = AuthService();
+//   LoginMethod loginMethod = LoginMethod.phoneNumber;
+//   // LoginMethod loginMethodGoogle = LoginMethod.google;
+//   await authService.initAuthService();
+//   String displayName = await authService.getDisplayName();
+//   String email = await authService.getEmail();
+//   String uid = await authService.getUid();
+//   // String phone = await authService.getUpdatePhoneNo();
+//   String phoneNo = await authService.getPhoneNo();
+//   final FirebaseFirestore firestore = FirebaseFirestore.instance;
+//   bool isGoogleLogin = false;
+  
+//   checkLoginMethod() {
+//     if (loginMethod == LoginMethod.google) {
+//       isGoogleLogin = true;
+//       return isGoogleLogin;
+//     } 
+//     else {
+//       isGoogleLogin = false;
+//       return isGoogleLogin;
+//     }
+//   }
+
+//   // String existingPhoneNumber = '';
+//   // ignore: use_build_context_synchronously
+//   showTopModalSheet(
+//       context,
+//       Container(
+//         height: MediaQuery.of(context).size.height * 0.4,
+//         width: MediaQuery.of(context).size.width * 0.9,
+//         padding: const EdgeInsets.all(16.0),
+//         child: Container(
+//           margin: const EdgeInsets.only(top: 20),
+//           child: Column(
+//             children: [
+//               checkLoginMethod()== true?
+//               Column(
+//                 crossAxisAlignment: CrossAxisAlignment.start,
+//                 children: [
+//                     Row(
+//                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
+//                       children: [
+//                         const Text(userProfileString,
+//                             style: TextStyle(
+//                                 fontSize: 22,
+//                                 fontWeight: FontWeight.bold,
+//                                 color: primaryColor)),
+//                         IconButton(
+//                             onPressed: () {
+//                               Get.back();
+//                             },
+//                             icon: const Icon(Icons.close))
+//                       ],
+//                     ),
+//                   const Divider(color: borderColor),
+//                   const Text(emailString,
+//                       style: TextStyle(
+//                           fontSize: 18,
+//                           fontWeight: FontWeight.bold,
+//                           color: primaryColor)),
+//                   const SizedBox(height: 5),
+//                   Text(email, style: const TextStyle(fontSize: 15)),
+//                   const SizedBox(height: 10),
+//                   const Text(nameString,
+//                       style: TextStyle(
+//                           fontSize: 18,
+//                           fontWeight: FontWeight.bold,
+//                           color: primaryColor)),
+//                   const SizedBox(height: 5),
+//                   Text(displayName, style: const TextStyle(fontSize: 15)),
+//                   // const SizedBox(height: 10),
+//                   // Row(
+//                   //   mainAxisAlignment: MainAxisAlignment.spaceBetween,
+//                   //   children: [
+//                   //     Column(
+//                   //       mainAxisAlignment: MainAxisAlignment.start,
+//                   //       crossAxisAlignment: CrossAxisAlignment.start,
+//                   //       children: [
+//                   //         const Text(phoneString,style: TextStyle(fontSize: 18,fontWeight: FontWeight.bold,color: primaryColor)),
+//                   //         const SizedBox(height: 5),
+//                   //         Text(existingPhoneNumber.isNotEmpty ? existingPhoneNumber : phone, style: const TextStyle(fontSize: 15)),
+//                   //       ],
+//                   //     ),
+//                   //   ],
+//                   // ),
+                  
+//                   const SizedBox(height: 10),
+//                   Align(
+//                       alignment: Alignment.center,
+//                       child: ElevatedButton(
+//                           onPressed: () {},
+//                           style: ElevatedButton.styleFrom(
+//                               backgroundColor: primaryColor),
+//                           child: const Text(deleteAccString))),
+//                 ],
+//               ):Container(),
+//               if(loginMethod == LoginMethod.phoneNumber) 
+//                     Column(
+//                 crossAxisAlignment: CrossAxisAlignment.start,
+//                       children: [
+//                         Row(
+//                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
+//                       children: [
+//                         const Text(userProfileString,
+//                             style: TextStyle(
+//                                 fontSize: 22,
+//                                 fontWeight: FontWeight.bold,
+//                                 color: primaryColor)),
+//                         IconButton(
+//                             onPressed: () {
+//                               Get.back();
+//                             },
+//                             icon: const Icon(Icons.close))
+//                       ],
+//                     ),
+//                   const Divider(color: borderColor),
+//                         Row(
+//                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
+//                           children: [
+//                             Column(
+//                               mainAxisAlignment: MainAxisAlignment.start,
+//                               crossAxisAlignment: CrossAxisAlignment.start,
+//                               children: [
+//                                 const Text(phoneString,
+//                                     style: TextStyle(
+//                                         fontSize: 18,
+//                                         fontWeight: FontWeight.bold,
+//                                         color: primaryColor)),
+//                                 const SizedBox(height: 5),
+//                                 Text(phoneNo, style: const TextStyle(fontSize: 15)),
+//                                 // const SizedBox(height: 10),
+//                                 // const Text(emailString,style: TextStyle(fontSize: 18,fontWeight: FontWeight.bold,color: primaryColor)),
+//                                 // const SizedBox(height: 5),
+//                                 // Text(email, style: const TextStyle(fontSize: 15)),
+//                                 // const SizedBox(height: 10)
+//                               ],
+//                             ),
+//                           ],
+//                         ),
+//                         const SizedBox(height: 10),
+//                   Align(
+//                       alignment: Alignment.center,
+//                       child: ElevatedButton(
+//                           onPressed: () {},
+//                           style: ElevatedButton.styleFrom(
+//                               backgroundColor: primaryColor),
+//                           child: const Text(deleteAccString))),
+//                       ],
+//                     )
+//             ],
+//           ),
+//         ),
+//       ),
+//       barrierDismissible: false);
+// }

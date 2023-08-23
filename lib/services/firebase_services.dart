@@ -12,11 +12,13 @@ class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn();
 
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseFirestore firestore = FirebaseFirestore.instance;
 
   SharedPreferences? _prefs;
   String verificationId = '';
   String smsCode = "";
+
+  bool isGoogleLogin = false;
 
   AuthService() {
     initAuthService(); // Initialize AuthService and SharedPreferences
@@ -43,7 +45,8 @@ class AuthService {
       if (googleUser == null) return null;
 
       // Obtain the GoogleSignInAuthentication object
-      final GoogleSignInAuthentication googleAuth =await googleUser.authentication;
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
 
       // Create a new credential using the GoogleSignInAuthentication object
       final AuthCredential credential = GoogleAuthProvider.credential(
@@ -52,22 +55,20 @@ class AuthService {
       );
 
       // Sign in to Firebase with the Google credentials
-      final UserCredential authResult =await _auth.signInWithCredential(credential);
-
+      final UserCredential authResult =
+          await _auth.signInWithCredential(credential);
+      isGoogleLogin = true;
       User? user = authResult.user;
       if (user != null) {
         // Save user data to SharedPreferences
         await _prefs?.setString('displayName', user.displayName ?? '');
         await _prefs?.setString('email', user.email ?? '');
         await _prefs?.setString('uid', user.uid);
-
-        // if (phoneNumber.isNotEmpty) {
-        //   await user.updatePhoneNumber(PhoneAuthProvider.credential(verificationId: verificationId, smsCode: smsCode));
-        //   await _prefs?.setString('phoneNo', phoneNumber);
-        // }
+        await _prefs?.setBool('isGoogleLogin', true);
       }
       print(user?.displayName);
       print(user?.email);
+      print(_prefs?.getBool('isGoogleLogin'));
 
       if (AuthService().isUserLoggedIn()) {
         // Navigate to home screen
@@ -76,8 +77,7 @@ class AuthService {
         });
       }
       return authResult.user;
-    } 
-    catch (error) {
+    } catch (error) {
       print("Error signing in with Google: $error");
       return null;
     }
@@ -97,8 +97,7 @@ class AuthService {
       await _prefs?.remove('phoneNo');
 
       print("User signed out successfully.");
-    } 
-    catch (error) {
+    } catch (error) {
       print("Error signing out: $error");
     }
   }
@@ -120,29 +119,33 @@ class AuthService {
     return _prefs?.getString('phoneNo') ?? '';
   }
 
-  Future<String> getUpdatePhoneNo() async {
-    try {
-      String uid = _auth.currentUser!.uid;
-      DocumentSnapshot snapshot =
-          await _firestore.collection('users').doc(uid).get();
-      return snapshot.get('phoneNo');
-    } catch (error) {
-      print('Error getting phone number: $error');
-      return '';
-    }
+  Future<bool?> getGoogleLogin() async {
+    return _prefs?.getBool('isGoogleLogin');
   }
 
-  Future<String> getUpdateEmail() async {
-    try {
-      String uid = _auth.currentUser!.uid;
-      DocumentSnapshot snapshot =
-          await _firestore.collection('users').doc(uid).get();
-      return snapshot.get('email');
-    } catch (error) {
-      print('Error getting email address: $error');
-      return '';
-    }
-  }
+  // Future<String> getUpdatePhoneNo() async {
+  //   try {
+  //     String uid = _auth.currentUser!.uid;
+  //     DocumentSnapshot snapshot =
+  //         await _firestore.collection('users').doc(uid).get();
+  //     return snapshot.get('phoneNo');
+  //   } catch (error) {
+  //     print('Error getting phone number: $error');
+  //     return '';
+  //   }
+  // }
+
+  // Future<String> getUpdateEmail() async {
+  //   try {
+  //     String uid = _auth.currentUser!.uid;
+  //     DocumentSnapshot snapshot =
+  //         await _firestore.collection('users').doc(uid).get();
+  //     return snapshot.get('email');
+  //   } catch (error) {
+  //     print('Error getting email address: $error');
+  //     return '';
+  //   }
+  // }
 
   Future<void> verifyPhoneNumber(String phoneNo) async {
     try {
@@ -150,7 +153,7 @@ class AuthService {
         phoneNumber: phoneNo,
         verificationCompleted: (PhoneAuthCredential credential) async {
           await _auth.signInWithCredential(credential);
-           print('Phone number automatically verified and user signed in.');
+          print('Phone number automatically verified and user signed in.');
         },
         verificationFailed: (FirebaseAuthException e) {
           if (e.code == 'invalid-phone-number') {
@@ -186,9 +189,11 @@ class AuthService {
 
         UserCredential userCredential =
             await _auth.signInWithCredential(credential);
+        isGoogleLogin = true;
         User? user = userCredential.user;
         if (user != null) {
           await _prefs?.setString('phoneNo', user.phoneNumber ?? '');
+          await _prefs?.setBool('isGoogleLogin', false);
           Get.to(const Home());
         } else {
           throw Exception("Failed to sign in with OTP");
@@ -200,61 +205,122 @@ class AuthService {
     }
   }
 
-  Future<void> savePhoneNo(String phoneNo) async {
-    try {
-      String uid = _auth.currentUser!.uid;
-      // String? uemail = _auth.currentUser!.email;
+  Future<void> reauthenticateAndDeleteAccount(String? googleIdToken) async {
+  try {
+    final user = FirebaseAuth.instance.currentUser;
 
-      // Check if user already has a phone number
-      DocumentSnapshot userDoc =
-          await _firestore.collection('users').doc(uid).get();
-      if (userDoc.exists && userDoc.get('phoneNo') != null) {
-        // User already has a phone number, retrieve it from Firebase
-        String existingPhoneNumber = userDoc.get('phoneNo');
-        print('Phone number already exists for this user');
-        Get.snackbar(
-            'Notification', 'Phone number already exists for this user');
-      } else {
-        // Save the number if not already exists
-        await _firestore.collection('users').doc(uid).set({
-          'phoneNo': phoneNo,
-        }, SetOptions(merge: true));
-        DocumentSnapshot snapshot =
-            await _firestore.collection('users').doc(uid).get();
-        // return snapshot.get('phoneNo');
-        // Get.snackbar('', 'Phone number successfully updated');
-        await _prefs?.setString('phoneNo', phoneNo);
+    if (user != null) {
+      // Re-authenticate the user using their Google credentials
+      final credentials = GoogleAuthProvider.credential(idToken: googleIdToken);
+      await user.reauthenticateWithCredential(credentials);
+
+      // Delete the user account
+      await user.delete();
+
+      // Sign out after deleting the account
+      await FirebaseAuth.instance.signOut();
+
+      // Navigate to login with clear route history
+      Get.offAll(const Login());
+    }
+  } catch (error) {
+    print("Error re-authenticating and deleting account: $error");
+    // Handle error appropriately
+  }
+}
+
+Future<void> handleDeleteAccount() async {
+  try {
+    final googleSignIn = GoogleSignIn(scopes: ['email']); // Initialize GoogleSignIn
+
+    // Sign in with Google
+    final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
+
+    if (googleUser != null) {
+      // Obtain GoogleSignInAuthentication, including the idToken
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+
+      // Call reauthenticateAndDeleteAccount with the idToken
+      await reauthenticateAndDeleteAccount(googleAuth.idToken);
+
+      // Sign out from Google after account deletion
+      await googleSignIn.signOut();
+    }
+  } catch (error) {
+    print("Error handling account deletion: $error");
+    // Handle error appropriately
+  }
+}
+
+
+
+  Future<void> deletePhoneNumberAccount() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        await user.delete();
       }
     } catch (error) {
-      print('Error saving phone number: $error');
+      print("Error deleting account: $error");
+      // Handle error appropriately
     }
   }
 
-  Future<void> saveEmail(String email) async {
-    try {
-      String uid = _auth.currentUser!.uid;
+  // Future<void> savePhoneNo(String phoneNo) async {
+  //   try {
+  //     String uid = _auth.currentUser!.uid;
+  //     // String? uemail = _auth.currentUser!.email;
 
-      // Check if user already has a email address
-      DocumentSnapshot userDoc =
-          await _firestore.collection('users').doc(uid).get();
-      if (userDoc.exists && userDoc.get('email') != null) {
-        // User already has a email address, retrieve it from Firebase
-        String existingEmail = userDoc.get('email');
-        print('Email Address already exists for this user');
-        Get.snackbar(
-            'Notification', 'Email Address already exists for this user');
-      } else {
-        // Save the email address if not already exists
-        await _firestore.collection('users').doc(uid).set({
-          'email': email,
-        }, SetOptions(merge: true));
-        DocumentSnapshot snapshot =
-            await _firestore.collection('users').doc(uid).get();
+  //     // Check if user already has a phone number
+  //     DocumentSnapshot userDoc =
+  //         await _firestore.collection('users').doc(uid).get();
+  //     if (userDoc.exists && userDoc.get('phoneNo') != null) {
+  //       // User already has a phone number, retrieve it from Firebase
+  //       String existingPhoneNumber = userDoc.get('phoneNo');
+  //       print('Phone number already exists for this user');
+  //       Get.snackbar(
+  //           'Notification', 'Phone number already exists for this user');
+  //     } else {
+  //       // Save the number if not already exists
+  //       await _firestore.collection('users').doc(uid).set({
+  //         'phoneNo': phoneNo,
+  //       }, SetOptions(merge: true));
+  //       DocumentSnapshot snapshot =
+  //           await _firestore.collection('users').doc(uid).get();
+  //       // return snapshot.get('phoneNo');
+  //       // Get.snackbar('', 'Phone number successfully updated');
+  //       await _prefs?.setString('phoneNo', phoneNo);
+  //     }
+  //   } catch (error) {
+  //     print('Error saving phone number: $error');
+  //   }
+  // }
 
-        await _prefs?.setString('email', email);
-      }
-    } catch (error) {
-      print('Error saving Email Address: $error');
-    }
-  }
+  // Future<void> saveEmail(String email) async {
+  //   try {
+  //     String uid = _auth.currentUser!.uid;
+
+  //     // Check if user already has a email address
+  //     DocumentSnapshot userDoc =
+  //         await _firestore.collection('users').doc(uid).get();
+  //     if (userDoc.exists && userDoc.get('email') != null) {
+  //       // User already has a email address, retrieve it from Firebase
+  //       String existingEmail = userDoc.get('email');
+  //       print('Email Address already exists for this user');
+  //       Get.snackbar(
+  //           'Notification', 'Email Address already exists for this user');
+  //     } else {
+  //       // Save the email address if not already exists
+  //       await _firestore.collection('users').doc(uid).set({
+  //         'email': email,
+  //       }, SetOptions(merge: true));
+  //       DocumentSnapshot snapshot =
+  //           await _firestore.collection('users').doc(uid).get();
+
+  //       await _prefs?.setString('email', email);
+  //     }
+  //   } catch (error) {
+  //     print('Error saving Email Address: $error');
+  //   }
+  // }
 }

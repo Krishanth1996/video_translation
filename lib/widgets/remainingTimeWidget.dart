@@ -3,16 +3,17 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:video_subtitle_translator/colors.dart';
 
 class RemainingTimeWidget extends StatelessWidget {
-  final String? email;
+  final String? uid;
 
-  const RemainingTimeWidget(this.email, {super.key});
+  const RemainingTimeWidget(
+    this.uid, {super.key});
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<DocumentSnapshot>(
       stream: FirebaseFirestore.instance
           .collection('Remaining_Time')
-          .doc(email)
+          .doc(uid)
           .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
@@ -60,11 +61,16 @@ class RemainingTimeWidget extends StatelessWidget {
                 ),
               ),
             ),
-            Text('Used :$formattedUsedPercentage% - $formattedUsedTime min /$formattedMonthlyLimit min'),
+            Text(
+                'Used :$formattedUsedPercentage% - $formattedUsedTime min /$formattedMonthlyLimit min'),
             Column(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Text('(You have only $formattedRemainingTime minutes)',style: const TextStyle(color: greenColor,fontSize:12,fontWeight: FontWeight.bold)),
+                Text('(You have only $formattedRemainingTime minutes)',
+                    style: const TextStyle(
+                        color: greenColor,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold)),
               ],
             )
           ],

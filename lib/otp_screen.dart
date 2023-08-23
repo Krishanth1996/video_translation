@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:get/get.dart';
 import 'package:pinput/pinput.dart';
 import 'package:video_subtitle_translator/home.dart';
-import 'package:video_subtitle_translator/services/firebase_services.dart';
 import 'colors.dart';
 import 'constants.dart';
 
