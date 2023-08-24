@@ -5,12 +5,12 @@ import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_ffmpeg/flutter_ffmpeg.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
 import 'package:http/http.dart' as http;
 import 'package:video_subtitle_translator/constants.dart';
@@ -81,6 +81,7 @@ class _HomeState extends State<Home> {
   String srtContent = '';
   String subtitles = '';
   String videoId = '';
+  String? videoName;
   User? user;
 
   TextEditingController subtitleController = TextEditingController();
@@ -124,9 +125,11 @@ class _HomeState extends State<Home> {
   double remainingTime = 900;
 
   final CollectionReference usersCollection =
-      FirebaseFirestore.instance.collection('Remaining_Time');
+  
+  FirebaseFirestore.instance.collection('Remaining_Time');
+   TextEditingController urlController = TextEditingController();
+  String videoUrl = '';
 
-  List<VideoDetails> savedVideos = [];
 
   @override
   void initState() {
@@ -203,6 +206,8 @@ class _HomeState extends State<Home> {
     if (pickedFile != null) {
       final videoPlayerController =
           VideoPlayerController.file(File(pickedFile.path));
+      videoName = pickedFile.name;
+      videoFile = File(pickedFile.path);
       // Initialize the video player controller
       await videoPlayerController.initialize();
       await videoPlayerController.play();
@@ -250,7 +255,6 @@ class _HomeState extends State<Home> {
         isLoadingVideo = true;
         showLoadingPopup = true;
       });
-
       await Future.delayed(const Duration(seconds: 5));
       await initializeVideoPlayerFuture;
       setState(() {
@@ -269,7 +273,6 @@ class _HomeState extends State<Home> {
     String videoId = generateVideoId();
     var result = await flutterFFmpeg
         .execute('-i ${videoFile.path} -vn -c:a aac $outputPath');
-
     // Audio extraction successful
     if (result == 0) {
       setState(() {
@@ -287,6 +290,24 @@ class _HomeState extends State<Home> {
 
       print("Extracted audio duration: $durationInSeconds seconds");
       showSubtitleSelectionSheet(context);
+    } else if (result == 1) {
+      final youtube = YoutubeExplode();
+      var manifest = await youtube.videos.streamsClient.getManifest(videoId);
+      var streams = manifest.audioOnly;
+
+      // Get the audio track with the highest bitrate.
+      var audio = streams.first;
+
+      // Get the audio stream URL
+      Uri audioStreamUrl = audio.url;
+      final arguments = [
+        '-i', audioStreamUrl,
+        '-vn', // Disable video
+        '-c:a', 'aac', // Use the AAC codec
+        outputPath,
+      ];
+      // saveRemainingTime()
+      final result = await flutterFFmpeg.executeWithArguments(arguments);
     } else {
       //Audio extraction failed
       Get.snackbar(sorryMsg, audioExtractFailMsg,
@@ -372,7 +393,7 @@ class _HomeState extends State<Home> {
 
       // Save the subtitle to Firestore
       saveSubtitleToFirestore(responseBody);
-
+      
       // ignore: use_build_context_synchronously
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -670,8 +691,7 @@ class _HomeState extends State<Home> {
     });
   }
 
-  TextEditingController urlController = TextEditingController();
-  String videoUrl = '';
+ 
 
   Future<void> getYoutubeVideo() async {
     final videoUrl = urlController.text.trim();
@@ -697,7 +717,7 @@ class _HomeState extends State<Home> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Invalid YouTube URL'),
-              backgroundColor: Color.fromARGB(255, 202, 81, 127),
+              backgroundColor: primaryColor,
             ),
           );
         }
@@ -705,16 +725,15 @@ class _HomeState extends State<Home> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('An error occurred: $e'),
-            backgroundColor: const Color.fromARGB(255, 202, 81, 127),
+            backgroundColor: primaryColor,
           ),
         );
       }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please enter a valid YouTube URL'),
-          backgroundColor: Color.fromARGB(255, 202, 81, 127),
-        ),
+            content: Text('Please enter a valid YouTube URL'),
+            backgroundColor: primaryColor),
       );
     }
   }
@@ -767,8 +786,6 @@ class _HomeState extends State<Home> {
     }
   }
 
-  final yt = YoutubeExplode();
-
   Future<void> fetchVideoInfoAndExtractAudio(String videoUrl) async {
     final youtube = YoutubeExplode();
 
@@ -814,28 +831,6 @@ class _HomeState extends State<Home> {
     durationInSeconds = fileSizeInBytes * 8 / bitRate;
     showSubtitleSelectionSheet(context);
   }
-
-  // Future<void> saveSubtitledVideo(SubtitledVideo subtitledVideo) async {
-  //   final prefs = await SharedPreferences.getInstance();
-  //   const videosKey = 'subtitled_videos';
-
-  //   List<String> existingVideos = prefs.getStringList(videosKey) ?? [];
-  //   existingVideos.add(jsonEncode(subtitledVideo.toJson()));
-  //   await prefs.setStringList(videosKey, existingVideos);
-  // }
-
-  // Future<List<SubtitledVideo>> loadSubtitledVideos() async {
-  //   final prefs = await SharedPreferences.getInstance();
-  //   const videosKey = 'subtitled_videos';
-
-  //   List<String> savedVideos = prefs.getStringList(videosKey) ?? [];
-  //   List<SubtitledVideo> subtitledVideos = savedVideos
-  //       .map<SubtitledVideo>(
-  //           (videoJson) => SubtitledVideo.fromJson(jsonDecode(videoJson)))
-  //       .toList();
-
-  //   return subtitledVideos;
-  // }
 
   @override
   Widget build(BuildContext context) {
@@ -936,39 +931,21 @@ class _HomeState extends State<Home> {
                           //Import Video Field End//
                           const SizedBox(height: 20),
                           //Import Video URL Field//
-                          TextField(
-                            controller: urlController,
-                            onChanged: (value) {
-                              setState(() {
-                                videoUrl = value;
-                                isVideoExist = false;
-                              });
+                          ElevatedButtonCircularWidget(
+                            onPressed: () async {
+                              showImportUrlSheet(context);
                             },
-                            decoration: InputDecoration(
-                                labelText: 'Import URL',
-                                labelStyle:
-                                    const TextStyle(color: primaryColor),
-                                enabledBorder: const OutlineInputBorder(
-                                  borderSide: BorderSide(color: Colors.black),
-                                  borderRadius:
-                                      BorderRadius.all(Radius.circular(20)),
-                                ),
-                                focusedBorder: const OutlineInputBorder(
-                                  borderSide: BorderSide(color: Colors.black),
-                                  borderRadius:
-                                      BorderRadius.all(Radius.circular(20)),
-                                ),
-                                prefixIcon:
-                                    const Icon(Icons.link, color: primaryColor),
-                                suffixIcon: IconButton(
-                                    onPressed: () {
-                                      isLocalStorageVideo = false;
-                                      getYoutubeVideo();
-                                      setVideoController();
-                                    },
-                                    icon: const Icon(Icons.send,
-                                        color: primaryColor))),
+                            backgroundColor: primaryColor,
+                            child: const RowWithIconTextWidget(
+                              text: importUrlString,
+                              icon: CupertinoIcons.link,
+                              iconSize: 20,
+                              iconColor: whiteColor,
+                              textColor: whiteColor,
+                              fontSize: 20,
+                            ),
                           ),
+                          //
                           //Import Video URL Field End//
                         ],
                       ),
@@ -982,6 +959,10 @@ class _HomeState extends State<Home> {
                       decoration: boxDecoration1,
                       child: Column(
                         children: [
+                          isLocalStorageVideo
+                              ? const Text(
+                                  "You can't create subtitles for youtube videos here.If you want that go back. Select second option")
+                              : Container(),
                           Center(
                             child: Container(
                               width: 300,
@@ -1308,40 +1289,6 @@ class _HomeState extends State<Home> {
                         ],
                       ),
                     ),
-                  // if (isLocalStorageVideo)
-                  //   Container(
-                  //       height: 200,
-                  //       margin: const EdgeInsets.all(10),
-                  //       decoration: boxDecoration,
-                  //       padding: const EdgeInsets.all(15),
-                  //       child: FutureBuilder<List<SubtitledVideo>>(
-                  //         future: loadSubtitledVideos(),
-                  //         builder: (context, snapshot) {
-                  //           // if (snapshot.connectionState == ConnectionState.waiting) {
-                  //           //   return CircularProgressIndicator();
-                  //           // }
-                  //           // else
-                  //           if (snapshot.hasError) {
-                  //             return Text('Error: ${snapshot.error}');
-                  //           } else {
-                  //             List<SubtitledVideo> subtitledVideos =
-                  //                 snapshot.data!;
-                  //             return ListView.builder(
-                  //               itemCount: subtitledVideos.length,
-                  //               itemBuilder: (context, index) {
-                  //                 return ListTile(
-                  //                   title: Text('Video ${index + 1}'),
-                  //                   onTap: () {
-                  //                     // Navigate to a details page for the selected video
-                  //                     // You can pass the selected SubtitledVideo to the details page
-                  //                   },
-                  //                 );
-                  //               },
-                  //             );
-                  //           }
-                  //         },
-                  //       ))
-                  // 
                 ],
               ),
             ),
@@ -1526,6 +1473,90 @@ class _HomeState extends State<Home> {
                 child: const Text(yesString,
                     style: TextStyle(color: whiteColor, fontSize: 15))),
           ],
+        );
+      },
+    );
+  }
+
+  void showImportUrlSheet(BuildContext context) async {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      enableDrag: true,
+      isDismissible: false,
+      builder: (BuildContext context) {
+        return SingleChildScrollView(
+          child: Container(
+            height: MediaQuery.of(context).size.height * 0.6,
+            width: MediaQuery.of(context).size.width * 0.9,
+            padding: const EdgeInsets.all(16.0),
+            child: Container(
+              margin: const EdgeInsets.only(top: 5),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Youtube Video',
+                        style: TextStyle(
+                            color: primaryColor,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold),
+                      ),
+                      IconButton(
+                          onPressed: () {
+                            Get.back();
+                          },
+                          icon: const Icon(
+                            Icons.close,
+                            color: primaryColor,
+                          ))
+                    ],
+                  ),
+                  const Divider(
+                    color: borderColor,
+                  ),
+                  const SizedBox(
+                    height: 10,
+                  ),
+                  TextField(
+                    controller: urlController,
+                    onChanged: (value) {
+                      setState(() {
+                        videoUrl = value;
+                        isVideoExist = false;
+                      });
+                    },
+                    textAlign: TextAlign.center,
+                    decoration: InputDecoration(
+                        label: const Text('Import URL'),
+                        labelStyle:
+                            const TextStyle(color: primaryColor, fontSize: 15),
+                        enabledBorder: const OutlineInputBorder(
+                          borderSide: BorderSide(color: Colors.black),
+                          borderRadius: BorderRadius.all(Radius.circular(20)),
+                        ),
+                        focusedBorder: const OutlineInputBorder(
+                          borderSide: BorderSide(color: Colors.black),
+                          borderRadius: BorderRadius.all(Radius.circular(20)),
+                        ),
+                        contentPadding:
+                            const EdgeInsets.symmetric(vertical: 18),
+                        prefixIcon: const Icon(Icons.link, color: primaryColor),
+                        suffixIcon: IconButton(
+                            onPressed: () {
+                              isLocalStorageVideo = false;
+                              Get.back();
+                              getYoutubeVideo();
+                              setVideoController();
+                            },
+                            icon: const Icon(Icons.send, color: primaryColor))),
+                  )
+                ],
+              ),
+            ),
+          ),
         );
       },
     );

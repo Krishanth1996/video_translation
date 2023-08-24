@@ -101,19 +101,12 @@ void showDeleteAccount(BuildContext context) async {
               ),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: primaryColor),
-                child: Row(
-                  children: const [
-                    Icon(Icons.cut),
-                    Text(
-                      'Delete',
-                    ),
-                  ],
+                child: const Text(
+                  'Delete',
                 ),
                 onPressed: () async {
-                  // await authService.deleteGoogleAccount();
-                  await authService.handleDeleteAccount();
-                  Get.snackbar('Your Account Deleted', 'Successfully',
-                      colorText: primaryColor);
+                  await authService.deleteAccount();
+                  Get.snackbar('Your Account Deleted', 'Successfully',colorText: primaryColor);
                 },
               ),
             ],
@@ -138,6 +131,8 @@ void showProfileSheet(BuildContext context) async {
     isScrollControlled: true,
     isDismissible: false,
     builder: (BuildContext context) {
+      double width = MediaQuery.of(context).size.width;
+    double height = MediaQuery.of(context).size.height;
       return Container(
         height: MediaQuery.of(context).size.height * 0.4,
         width: MediaQuery.of(context).size.width * 0.9,
@@ -207,9 +202,11 @@ void showProfileSheet(BuildContext context) async {
                             onPressed: () async {
                               showDeleteAccount(context);
                             },
-                            style: ElevatedButton.styleFrom(
-                                backgroundColor: primaryColor),
-                            child: const Text(deleteAccString))),
+                            style: ElevatedButton.styleFrom(backgroundColor: primaryColor),
+                            child: 
+                                const Text(deleteAccString),
+                              )),
+                        // 
                   ],
                 ),
               if (isGoogleLogin == false)
@@ -259,7 +256,7 @@ void showProfileSheet(BuildContext context) async {
                         ),
                       ],
                     ),
-                    SizedBox(
+                    const SizedBox(
                       height: 20,
                     ),
                     Align(
@@ -280,3 +277,5 @@ void showProfileSheet(BuildContext context) async {
     },
   );
 }
+
+

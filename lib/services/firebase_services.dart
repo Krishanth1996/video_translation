@@ -205,54 +205,23 @@ class AuthService {
     }
   }
 
-  Future<void> reauthenticateAndDeleteAccount(String? googleIdToken) async {
-  try {
-    final user = FirebaseAuth.instance.currentUser;
+  // Delete the Firebase user
+  Future<void> deleteAccount() async {
+    User? currentUser = _auth.currentUser;
+    if (currentUser != null) {
+      try {
+        // Revoke Google Sign-In access
+        await _googleSignIn.signOut();
 
-    if (user != null) {
-      // Re-authenticate the user using their Google credentials
-      final credentials = GoogleAuthProvider.credential(idToken: googleIdToken);
-      await user.reauthenticateWithCredential(credentials);
+        // Delete the user's Firebase account
+        await currentUser.delete();
 
-      // Delete the user account
-      await user.delete();
-
-      // Sign out after deleting the account
-      await FirebaseAuth.instance.signOut();
-
-      // Navigate to login with clear route history
-      Get.offAll(const Login());
+        Get.to(const Login());
+      } catch (e) {
+        print("Error deleting account: $e");
+      }
     }
-  } catch (error) {
-    print("Error re-authenticating and deleting account: $error");
-    // Handle error appropriately
   }
-}
-
-Future<void> handleDeleteAccount() async {
-  try {
-    final googleSignIn = GoogleSignIn(scopes: ['email']); // Initialize GoogleSignIn
-
-    // Sign in with Google
-    final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
-
-    if (googleUser != null) {
-      // Obtain GoogleSignInAuthentication, including the idToken
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
-
-      // Call reauthenticateAndDeleteAccount with the idToken
-      await reauthenticateAndDeleteAccount(googleAuth.idToken);
-
-      // Sign out from Google after account deletion
-      await googleSignIn.signOut();
-    }
-  } catch (error) {
-    print("Error handling account deletion: $error");
-    // Handle error appropriately
-  }
-}
-
-
 
   Future<void> deletePhoneNumberAccount() async {
     try {

@@ -17,6 +17,7 @@ const String languageString = "Language";
 const String logoutString = "Logout";
 const String createSubtitleString = "Create Subtitle";
 const String importVideoString = "Import video";
+const String importUrlString = "Import URL";
 const String cancelString = "Cancel";
 const String confirmString = "Confirm";
 const String attemptLogoutString = "Attempting to Logout!";
