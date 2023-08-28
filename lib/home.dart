@@ -9,6 +9,8 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_ffmpeg/flutter_ffmpeg.dart';
 import 'package:get/get.dart';
+import 'package:googleapis/secretmanager/v1.dart';
+import 'package:googleapis_auth/auth_io.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:video_player/video_player.dart';
@@ -22,29 +24,8 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'colors.dart';
 import 'package:video_subtitle_translator/widgets/remainingTimeWidget.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 
-class SubtitledVideo {
-  final String videoFilePath;
-  final List<Map<String, dynamic>> subtitleLines;
-
-  SubtitledVideo(this.videoFilePath, this.subtitleLines);
-
-  // Convert SubtitledVideo instance to JSON
-  Map<String, dynamic> toJson() {
-    return {
-      'videoFilePath': videoFilePath,
-      'subtitleLines': subtitleLines,
-    };
-  }
-
-  // Create SubtitledVideo instance from JSON
-  factory SubtitledVideo.fromJson(Map<String, dynamic> json) {
-    return SubtitledVideo(
-      json['videoFilePath'],
-      List<Map<String, dynamic>>.from(json['subtitleLines']),
-    );
-  }
-}
 
 class Home extends StatefulWidget {
   const Home({super.key});
@@ -55,24 +36,6 @@ class Home extends StatefulWidget {
 
 final AuthService authService = AuthService();
 
-class VideoDetails {
-  final String videoUrl;
-  final String subtitles;
-
-  VideoDetails(this.videoUrl, this.subtitles);
-
-  Map<String, dynamic> toJson() {
-    return {
-      'videoUrl': videoUrl,
-      'subtitles': subtitles,
-    };
-  }
-
-  factory VideoDetails.fromJson(Map<String, dynamic> json) {
-    return VideoDetails(json['videoUrl'], json['subtitles']);
-  }
-}
-
 class _HomeState extends State<Home> {
   String? displayName;
   String? email;
@@ -82,17 +45,26 @@ class _HomeState extends State<Home> {
   String subtitles = '';
   String videoId = '';
   String? videoName;
+  String editedSubtitle = '';
+  String videoUrl = '';
+  String downloadUrl='';
+ String fileName = '';
+
   User? user;
 
   TextEditingController subtitleController = TextEditingController();
+  TextEditingController urlController = TextEditingController();
 
+  YoutubePlayerController? youtubeController;
   VideoPlayerController? controller;
 
   final FlutterFFmpeg flutterFFmpeg = FlutterFFmpeg();
-  YoutubePlayerController? youtubeController;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final CollectionReference usersCollection =FirebaseFirestore.instance.collection('Remaining_Time');
 
   late Future<void> initializeVideoPlayerFuture;
   late File videoFile;
+   int currentSubtitleIndex = 0;
 
   bool isVideoExist = false;
   bool isVideoPlaying = false;
@@ -108,28 +80,20 @@ class _HomeState extends State<Home> {
   bool isReachedLimit = false;
   bool isLocalStorageVideo = false;
   bool isGoogleLogin = false;
+  bool isEditing = false;
 
   List<String> extractedAudioPaths = [];
   List<String> downloadedVideoPaths = [];
-
   List<Map<String, dynamic>> subtitleLines = [];
-
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  
+  double durationInSeconds = 0;
+  double remainingTime = 900;
+  double start=0;
+  double end=0;
 
   Duration videoDuration = Duration.zero;
   Duration currentPosition = Duration.zero;
-
   Timer? durationTimer;
-
-  double durationInSeconds = 0;
-  double remainingTime = 900;
-
-  final CollectionReference usersCollection =
-  
-  FirebaseFirestore.instance.collection('Remaining_Time');
-   TextEditingController urlController = TextEditingController();
-  String videoUrl = '';
-
 
   @override
   void initState() {
@@ -138,6 +102,7 @@ class _HomeState extends State<Home> {
     _startPositionListener();
     loadUserData();
     saveRemainingTime(0, uid);
+    updateSubtitleIndex(currentPosition);
   }
 
   @override
@@ -147,7 +112,7 @@ class _HomeState extends State<Home> {
     durationTimer?.cancel();
     super.dispose();
   }
-
+  
   //Loading User Details//
   Future<void> loadUserData() async {
     authService.isUserLoggedIn();
@@ -167,7 +132,7 @@ class _HomeState extends State<Home> {
           playedColor: whiteColor, backgroundColor: borderColor),
     );
   }
-
+  
   //Video timing while playing//
   void _updateCurrentPosition() {
     setState(() {
@@ -204,8 +169,7 @@ class _HomeState extends State<Home> {
     final picker = ImagePicker();
     final pickedFile = await picker.pickVideo(source: ImageSource.gallery);
     if (pickedFile != null) {
-      final videoPlayerController =
-          VideoPlayerController.file(File(pickedFile.path));
+      final videoPlayerController =VideoPlayerController.file(File(pickedFile.path));
       videoName = pickedFile.name;
       videoFile = File(pickedFile.path);
       // Initialize the video player controller
@@ -325,8 +289,7 @@ class _HomeState extends State<Home> {
       QuerySnapshot querySnapshot =
           await FirebaseFirestore.instance.collection('apiKeys').limit(1).get();
 
-      print(
-          'Number of documents in query result: ${querySnapshot.docs.length}');
+      print('Number of documents in query result: ${querySnapshot.docs.length}');
 
       if (querySnapshot.docs.isNotEmpty) {
         DocumentSnapshot apiKeyDoc = querySnapshot.docs.first;
@@ -341,31 +304,39 @@ class _HomeState extends State<Home> {
     }
   }
 
-// Future<String?> fetchApiKey() async {
-//   try {
-//     final response = await http.get(Uri.parse('https://asia-south1-videotranslate-36e2f.cloudfunctions.net/storeApiKey'));
-//     if (response.statusCode == 200) {
-//       final jsonData = json.decode(response.body);
-//       return jsonData['apiKey'];
-//     }
-//   } catch (error) {
-//     print('Error fetching API key: $error');
-//   }
-//   return null;
-// }
+ Future<Map<String, dynamic>?> getApiInfoFromCloudFunction() async {
+  final HttpsCallable callable = FirebaseFunctions.instance.httpsCallable('getApiInfo');
+  try {
+    final response = await callable.call();
+    final responseData = Map<String, dynamic>.from(response.data);
+    final data = responseData['data']; // Extract data field from response
+    return data;
+  } on FirebaseFunctionsException catch (e) {
+    print('Error calling Cloud Function: ${e.message}');
+    return null;
+  }
+}
+
 
   // Api call for convert text from extracted audio start //
   Future<void> convertAudioToText(String value) async {
-    String apiUrl = 'https://transcribe.whisperapi.com';
-    String? apiKey =
-        await retrieveApiKey(); // Retrieve the API key from Firestore
-    // String? apiKey = await fetchApiKey(); // Retrieve the API key from Firestore
+    // String apiUrl = 'https://transcribe.whisperapi.com';
 
-    if (apiKey == null) {
-      print('API key not available.');
-      return;
-    }
-    // String apiKey = '4F6TEV6NR42DZ952CINTHBIS36KKB2DV';
+    // String apiKey ='Y9T4F5MKEFDF3ZWN6J4HZ8QZFV7YK5VN'; // Retrieve the API key from Firestore
+
+    Map<String, dynamic>? apiInfo = await getApiInfoFromCloudFunction();
+    // if (apiKey == null) {
+    //   print('API key not available.');
+    //   return;
+    // }
+    if (apiInfo == null) {
+    print('API info not available.');
+    return;
+  }
+
+    String apiUrl = apiInfo['apiUrl'];
+    String apiKey = apiInfo['apiKey'];
+
     String filePath = extractedAudioPaths.last;
     String fileType = 'm4a';
 
@@ -393,7 +364,7 @@ class _HomeState extends State<Home> {
 
       // Save the subtitle to Firestore
       saveSubtitleToFirestore(responseBody);
-      
+
       // ignore: use_build_context_synchronously
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -456,8 +427,8 @@ class _HomeState extends State<Home> {
 
         for (var segment in segments) {
           String text = segment['text'];
-          double start = segment['start'];
-          double end = segment['end'];
+          start = segment['start'];
+          end = segment['end'];
 
           subtitleLines.add({
             'text': text,
@@ -478,17 +449,34 @@ class _HomeState extends State<Home> {
     });
   }
   // Save converted subtitles in Firestore end //
+  String formatTime(double seconds) {
+    int hours = seconds ~/ 3600;
+    int minutes = (seconds ~/ 60) % 60;
+    int remainingSeconds = (seconds % 60).toInt();
+    int milliseconds = ((seconds - seconds.floor()) * 1000).toInt();
 
+    return '$hours:${minutes.toString().padLeft(2, '0')}:${remainingSeconds.toString().padLeft(2, '0')},${milliseconds.toString().padLeft(3, '0')}';
+  }
   //Generate SRT File Start//
-  String generateSRT(subtitleLines) {
-    List<String> lines = subtitleLines.split('\n');
+  
+  String generateSRT(List<Map<String, dynamic>> subtitleLines) {
     StringBuffer srtContent = StringBuffer();
-    for (int i = 0; i < lines.length; i++) {
-      srtContent.writeln((i + 1).toString());
-      srtContent.writeln('00:00:00,000 --> 00:00:01,000');
-      srtContent.writeln(lines[i]);
+    
+    for (int i = 0; i < subtitleLines.length; i++) {
+      double startInSeconds = subtitleLines[i]['start'];
+      double endInSeconds = subtitleLines[i]['end'];
+      String text = subtitleLines[i]['text'];
+        
+      // Convert start and end times to hh:mm:ss,mmm format
+      String startTime = formatTime(startInSeconds);
+      String endTime = formatTime(endInSeconds);
+
+      srtContent.writeln('${i + 1}');
+      srtContent.writeln('$startTime --> $endTime');
+      srtContent.writeln(text);
       srtContent.writeln();
     }
+    
     return srtContent.toString();
   }
   //Generate SRT File End//
@@ -502,7 +490,7 @@ class _HomeState extends State<Home> {
 
 //Download SRT File Start//
   Future<void> downloadSRTFile() async {
-    String srtContent = generateSRT(subtitles);
+    String srtContent = generateSRT((subtitleLines));
     String videoId = generateVideoId();
 
     Directory? appDocumentsDirectory = await getExternalStorageDirectory();
@@ -543,7 +531,8 @@ class _HomeState extends State<Home> {
       TaskSnapshot taskSnapshot = await uploadTask;
 
       if (taskSnapshot.state == TaskState.success) {
-        String downloadUrl = await taskSnapshot.ref.getDownloadURL();
+        downloadUrl = await taskSnapshot.ref.getDownloadURL();
+        print(downloadUrl);
         return downloadUrl;
       } else {
         return '';
@@ -691,8 +680,6 @@ class _HomeState extends State<Home> {
     });
   }
 
- 
-
   Future<void> getYoutubeVideo() async {
     final videoUrl = urlController.text.trim();
 
@@ -832,6 +819,144 @@ class _HomeState extends State<Home> {
     showSubtitleSelectionSheet(context);
   }
 
+Future<List<Map<String, dynamic>>> retrieveSubtitlesFromFirestore() async {
+  CollectionReference subtitlesCollection = FirebaseFirestore.instance.collection('Subtitle_user');
+  String uid = _auth.currentUser!.uid;
+
+  DocumentSnapshot userDoc = await subtitlesCollection.doc(uid).get();
+  if (userDoc.exists) {
+    Map<String, dynamic>? userData = userDoc.data() as Map<String, dynamic>?;
+
+    if (userData != null) {
+      List<dynamic>? subtitlesData = userData['transcriptions'];
+
+      if (subtitlesData != null) {
+        List<Map<String, dynamic>> subtitles = [];
+        for (var subtitle in subtitlesData) {
+          var jsonResponse = json.decode(subtitle);
+          var segments = jsonResponse['segments'];
+
+          for (var segment in segments) {
+            String text = segment['text'];
+            double start = segment['start'];
+            double end = segment['end'];
+
+            subtitles.add({
+              'text': text,
+              'start': start,
+              'end': end,
+            });
+          }
+        }
+
+        return subtitles;
+      } else {
+        return []; // No subtitles found for the user
+      }
+    } else {
+      return []; // No subtitles found for the user
+    }
+  } else {
+    return []; // No subtitles found for the user
+  }
+}
+
+void updateSubtitleIndex(currentPosition) {
+  setState(() {
+    for (int i = 0; i < subtitleLines.length; i++) {
+      double start = subtitleLines[i]['start'] * 1000;
+      double end = subtitleLines[i]['end'] * 1000;
+
+      if (currentPosition.inMilliseconds >= start && currentPosition.inMilliseconds <= end) {
+        currentSubtitleIndex = i;
+        break;
+      }
+    }
+  });
+}
+
+Future<void> fetchSRTContent() async {
+    try {
+      final response = await http.get(Uri.parse(downloadUrl));
+      if (response.statusCode == 200) {
+        setState(() {
+          srtContent = response.body;
+        });
+        saveSRTContentAsFile();
+      } else {
+        print('Failed to fetch SRT content: ${response.statusCode}');
+      }
+    } catch (error) {
+      print('Error fetching SRT content: $error');
+    }
+  }
+
+  Future<void> saveSRTContentAsFile() async {
+  try {
+    fileName= '${videoId}subtitle.srt';
+    Directory appDocumentsDirectory = await getApplicationDocumentsDirectory();
+    File file = File('${appDocumentsDirectory.path}/subtitle.srt');
+    await file.writeAsString(srtContent);
+
+    print('SRT content saved as a file: ${file.path}');
+  } catch (error) {
+    print('Error saving SRT content as file: $error');
+  }
+}
+
+Future<String> readSRTFile() async {
+  try {
+    Directory appDocumentsDirectory = await getApplicationDocumentsDirectory();
+    File file = File('${appDocumentsDirectory.path}/subtitle.srt');
+    String srtContent = await file.readAsString();
+    return srtContent;
+  } catch (error) {
+    print('Error reading SRT file: $error');
+    return '';
+  }
+}
+double convertTimeToSeconds(String time) {
+  List<String> parts = time.split(':');
+  int hours = int.parse(parts[0]);
+  int minutes = int.parse(parts[1]);
+  double seconds = double.parse(parts[2].replaceFirst(',', '.'));
+
+  return hours * 3600 + minutes * 60 + seconds;
+}
+
+List<Map<String, dynamic>> parseSRTContent(String srtContent) {
+    List<Map<String, dynamic>> subtitles = [];
+    List<String> lines = srtContent.split('\n\n');
+
+    for (String line in lines) {
+      List<String> linesInBlock = line.split('\n');
+      if (linesInBlock.length >= 3) {
+        String index = linesInBlock[0];
+        String timing = linesInBlock[1];
+        String text = linesInBlock.sublist(2).join('\n'); // Join remaining lines as text
+
+        // Parse timing to get start and end times
+        List<String> times = timing.split(' --> ');
+        if (times.length == 2) {
+          String startTime = times[0];
+          String endTime = times[1];
+
+          // Convert start and end times to double values (in seconds)
+          double startInSeconds = convertTimeToSeconds(startTime);
+          double endInSeconds = convertTimeToSeconds(endTime);
+
+          subtitles.add({
+            'text': text,
+            'start': startInSeconds,
+            'end': endInSeconds,
+          });
+        }
+      }
+    }
+
+    return subtitles;
+  }
+
   @override
   Widget build(BuildContext context) {
     double width = MediaQuery.of(context).size.width;
@@ -867,15 +992,15 @@ class _HomeState extends State<Home> {
                   ),
                 ),
                 //Language Field//
-                PopupMenuItem<String>(
-                  padding: const EdgeInsets.only(left: 20, right: 50),
-                  value: 'Item 2',
-                  child: RowWIthIconTextbuttonWidget(
-                    onPressed: () {},
-                    icon: Icons.language,
-                    text: languageString,
-                  ),
-                ),
+                // PopupMenuItem<String>(
+                //   padding: const EdgeInsets.only(left: 20, right: 50),
+                //   value: 'Item 2',
+                //   child: RowWIthIconTextbuttonWidget(
+                //     onPressed: () {},
+                //     icon: Icons.language,
+                //     text: languageString,
+                //   ),
+                // ),
                 //Logout Field//
                 PopupMenuItem<String>(
                   padding: const EdgeInsets.only(left: 20, right: 50),
@@ -959,10 +1084,10 @@ class _HomeState extends State<Home> {
                       decoration: boxDecoration1,
                       child: Column(
                         children: [
-                          isLocalStorageVideo
-                              ? const Text(
-                                  "You can't create subtitles for youtube videos here.If you want that go back. Select second option")
-                              : Container(),
+                          // isLocalStorageVideo
+                          //     ? const Text(
+                          //         "You can't create subtitles for youtube videos here.If you want that go back. Select second option")
+                          //     : Container(),
                           Center(
                             child: Container(
                               width: 300,
@@ -988,7 +1113,7 @@ class _HomeState extends State<Home> {
                                                 });
                                               },
                                               child: VideoPlayer(controller!)),
-                                        )
+                                        ),
                                       ],
                                     )
                                   else
@@ -1152,53 +1277,127 @@ class _HomeState extends State<Home> {
                               else if (subtitles.isNotEmpty)
                                 if (isLocalStorageVideo)
                                   Container(
-                                    height: 200,
                                     margin: const EdgeInsets.all(10),
                                     decoration: boxDecoration,
-                                    padding: const EdgeInsets.all(15),
-                                    child: ListView.builder(
-                                      itemCount: subtitleLines.length,
-                                      itemBuilder: (context, index) {
-                                        String text =
-                                            subtitleLines[index]['text'];
-                                        double start = subtitleLines[index]
-                                                ['start'] *
-                                            1000;
-                                        double end =
-                                            subtitleLines[index]['end'] * 1000;
-
-                                        Duration currentPosition =
-                                            controller!.value.position;
-                                        bool isHighlighted = currentPosition
-                                                    .inMilliseconds >=
-                                                start &&
-                                            currentPosition.inMilliseconds <=
-                                                end;
-
-                                        return Row(
-                                          mainAxisAlignment: isHighlighted
-                                              ? MainAxisAlignment.center
-                                              : MainAxisAlignment.center,
-                                          children: [
-                                            Flexible(
-                                              child: Text(
-                                                text,
-                                                style: TextStyle(
-                                                  fontSize:
-                                                      isHighlighted ? 17 : 14,
-                                                  color: isHighlighted
-                                                      ? Colors.green
-                                                      : blackColor,
-                                                  fontWeight: isHighlighted
-                                                      ? FontWeight.bold
-                                                      : FontWeight.normal,
+                                    child: Column(
+                                      children: [
+                                        Container(
+                                          margin: const EdgeInsets.all(10),
+                                          height: height/2,
+                                          child: ListView.builder(
+                                            itemCount: subtitleLines.length,
+                                            itemBuilder: (context, index) {
+                                              String text =subtitleLines[index]['text'];
+                                              double start =subtitleLines[index]['start'] *1000;
+                                              double end = subtitleLines[index]['end'] *1000;
+                                                                                
+                                              Duration currentPosition =controller!.value.position;
+                                              bool isHighlighted =currentPosition.inMilliseconds >=start &&currentPosition.inMilliseconds <=end;
+                                                                                
+                                              TextEditingController subtitleController =TextEditingController(text: text);
+                                                                                
+                                              // Move the cursor to the end of the text when editing
+                                              if (isEditing && isHighlighted) {
+                                                final newCursorPosition =subtitleController.text.length;
+                                                subtitleController.selection =TextSelection.fromPosition(TextPosition(offset:newCursorPosition));
+                                              }
+                                                                                
+                                              return Container(
+                                                padding: const EdgeInsets.all(10),
+                                                decoration:BoxDecoration(
+                                                  color: isHighlighted ? primaryColor : Colors.transparent,
+                                                  borderRadius: BorderRadius.circular(10),
                                                 ),
+                                                child: Row(
+                                                  mainAxisAlignment: isHighlighted? MainAxisAlignment.center: MainAxisAlignment.center,
+                                                  children: [
+                                                    Flexible(
+                                                      child: isEditing && isHighlighted
+                                                          ? TextField(
+                                                            decoration: InputDecoration(
+                                                              border:InputBorder.none,
+                                                              suffixIcon: IconButton(
+                                                                onPressed:() async{
+                                                                    setState(() {
+                                                                      isVideoPlaying = true;
+                                                                      controller?.play();
+                                                                      isEditing=false;
+                                                                      Get.back();
+                                                                    });
+                                                                },
+                                                                icon:const Icon(Icons.check,color: whiteColor,)
+                                                               )
+                                                              ),
+                                                            controller:subtitleController,
+                                                            onChanged:(newText) {
+                                                              setState(() {
+                                                                subtitleLines[index]['text'] =newText;
+                                                              });
+                                                            },
+                                                            style: const TextStyle(
+                                                              color: whiteColor,
+                                                              fontSize: 16,
+                                                              fontWeight: FontWeight.bold,
+                                                            ),
+                                                            
+                                                          )
+                                                          : SelectableText(
+                                                                  text,
+                                                                  style: TextStyle(
+                                                                    backgroundColor: isHighlighted?primaryColor:whiteColor,
+                                                                    fontSize:isHighlighted? 16: 14,
+                                                                    color: isHighlighted? whiteColor: blackColor,
+                                                                    fontWeight:isHighlighted? FontWeight.bold: FontWeight.normal,
+                                                                  ),
+                                                                ),
+                                                                
+                                                    ),
+                                                    if(isHighlighted && !isEditing)
+                                                                IconButton(
+                                                                  onPressed:(){
+                                                                     setState(() {
+                                                                      if(isHighlighted){
+                                                                        isEditing = true;
+                                                                        isVideoPlaying = false;
+                                                                        controller?.pause();
+                                                                      }
+                                                                    });
+                                                                  },
+                                                                  icon:const Icon(Icons.edit,color: whiteColor,size: 16,)
+                                                                  ),
+                                                    const SizedBox(height: 15),
+                                                  ],
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                        ),
+                                        isEditing?
+                                             Align(
+                                              alignment: Alignment.bottomRight,
+                                              child: Container(
+                                                margin: const EdgeInsets.only(right: 20,bottom: 10),
+                                                child: ElevatedButton(
+                                                  style: ElevatedButton.styleFrom(backgroundColor: primaryColor),
+                                                    onPressed: () {
+                                                      // Convert the updated subtitleLines list to a JSON string
+                                                      String updatedSubtitle = json.encode({'segments': subtitleLines});
+                                                    
+                                                      // Call the function to save the updated subtitles to Firestore
+                                                      saveSubtitleToFirestore(updatedSubtitle);
+                                                      setState(() {
+                                                        editedSubtitle =updatedSubtitle;
+                                                        print(editedSubtitle);
+                                                        isVideoPlaying=true;
+                                                        controller?.play();
+                                                      });
+                                                    },
+                                                    child: const Text('Save',style: TextStyle(color: whiteColor),),
+                                                  ),
                                               ),
-                                            ),
-                                            const SizedBox(height: 25)
-                                          ],
-                                        );
-                                      },
+                                            )
+                                            : const SizedBox(),
+                                      ],
                                     ),
                                   ),
                               if (!isLocalStorageVideo)
@@ -1211,38 +1410,22 @@ class _HomeState extends State<Home> {
                                     child: ListView.builder(
                                       itemCount: subtitleLines.length,
                                       itemBuilder: (context, index) {
-                                        String text =
-                                            subtitleLines[index]['text'];
-                                        double start = subtitleLines[index]
-                                                ['start'] *
-                                            1000;
-                                        double end =
-                                            subtitleLines[index]['end'] * 1000;
-                                        Duration currentPosition =
-                                            youtubeController!.value.position;
-                                        bool isHighlighted = currentPosition
-                                                    .inMilliseconds >=
-                                                start &&
-                                            currentPosition.inMilliseconds <=
-                                                end;
+                                        String text =subtitleLines[index]['text'];
+                                        double start = subtitleLines[index]['start'] *1000;
+                                        double end =subtitleLines[index]['end'] * 1000;
+                                        Duration currentPosition =youtubeController!.value.position;
+                                        bool isHighlighted = currentPosition.inMilliseconds >=start &&currentPosition.inMilliseconds <=end;
                                         return Row(
-                                          mainAxisAlignment: isHighlighted
-                                              ? MainAxisAlignment.center
-                                              : MainAxisAlignment.center,
+                                          mainAxisAlignment: isHighlighted? MainAxisAlignment.center: MainAxisAlignment.center,
                                           children: [
                                             Flexible(
                                               child: Text(
                                                 text,
                                                 textAlign: TextAlign.center,
                                                 style: TextStyle(
-                                                  fontSize:
-                                                      isHighlighted ? 17 : 14,
-                                                  color: isHighlighted
-                                                      ? Colors.green
-                                                      : blackColor,
-                                                  fontWeight: isHighlighted
-                                                      ? FontWeight.bold
-                                                      : FontWeight.normal,
+                                                  fontSize:isHighlighted ? 17 : 14,
+                                                  color: isHighlighted? Colors.green: blackColor,
+                                                  fontWeight: isHighlighted? FontWeight.bold: FontWeight.normal,
                                                 ),
                                               ),
                                             ),
@@ -1256,8 +1439,7 @@ class _HomeState extends State<Home> {
                               Container(
                                 margin: const EdgeInsets.only(left: 10),
                                 child: Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
+                                  mainAxisAlignment:MainAxisAlignment.spaceBetween,
                                   children: [
                                     ElevatedButtonCircularWidget(
                                         onPressed: () {
@@ -1277,15 +1459,14 @@ class _HomeState extends State<Home> {
                                               downloadSRTFile();
                                             },
                                             backgroundColor: primaryColor,
-                                            child: const RowWithIconTextWidget(
-                                                text: downloadSRTString,
-                                                icon: Icons.download))
+                                            child: const RowWithIconTextWidget(text: downloadSRTString,icon: Icons.download))
                                         : Container(),
                                   ],
                                 ),
                               ),
                             ],
                           ),
+                          const SizedBox(height: 10,),
                         ],
                       ),
                     ),

@@ -27,3 +27,56 @@
   //       PhoneAuthProvider.credential(verificationId: verificationId, smsCode: otp));
   //   credentials.user != null ? true : false;
   // }
+
+
+
+  // Container(
+                                  //   height: 200,
+                                  //   margin: const EdgeInsets.all(10),
+                                  //   decoration: boxDecoration,
+                                  //   padding: const EdgeInsets.all(15),
+                                  //   child: ListView.builder(
+                                  //     itemCount: subtitleLines.length,
+                                  //     itemBuilder: (context, index) {
+                                  //       String text =
+                                  //           subtitleLines[index]['text'];
+                                  //       double start = subtitleLines[index]
+                                  //               ['start'] *
+                                  //           1000;
+                                  //       double end =
+                                  //           subtitleLines[index]['end'] * 1000;
+
+                                  //       Duration currentPosition =
+                                  //           controller!.value.position;
+                                  //       bool isHighlighted = currentPosition
+                                  //                   .inMilliseconds >=
+                                  //               start &&
+                                  //           currentPosition.inMilliseconds <=
+                                  //               end;
+
+                                  //       return Row(
+                                  //         mainAxisAlignment: isHighlighted
+                                  //             ? MainAxisAlignment.center
+                                  //             : MainAxisAlignment.center,
+                                  //         children: [
+                                  //           Flexible(
+                                  //             child: Text(
+                                  //               text,
+                                  //               style: TextStyle(
+                                  //                 fontSize:
+                                  //                     isHighlighted ? 17 : 14,
+                                  //                 color: isHighlighted
+                                  //                     ? Colors.green
+                                  //                     : blackColor,
+                                  //                 fontWeight: isHighlighted
+                                  //                     ? FontWeight.bold
+                                  //                     : FontWeight.normal,
+                                  //               ),
+                                  //             ),
+                                  //           ),
+                                  //           const SizedBox(height: 25)
+                                  //         ],
+                                  //       );
+                                  //     },
+                                  //   ),
+                                  // ),
