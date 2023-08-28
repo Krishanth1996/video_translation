@@ -2,7 +2,8 @@
   "functions": [
     {
       "source": "functions",
-      "codebase": "subtitle-functions",
+      "region": "asia-south1",
+      "codebase": "videotranslate-functions",
       "ignore": [
         "node_modules",
         ".git",

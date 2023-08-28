@@ -9,8 +9,6 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_ffmpeg/flutter_ffmpeg.dart';
 import 'package:get/get.dart';
-import 'package:googleapis/secretmanager/v1.dart';
-import 'package:googleapis_auth/auth_io.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:video_player/video_player.dart';
@@ -284,33 +282,13 @@ class _HomeState extends State<Home> {
   }
   // Extract audio from imported video End//
 
-  Future<String?> retrieveApiKey() async {
-    try {
-      QuerySnapshot querySnapshot =
-          await FirebaseFirestore.instance.collection('apiKeys').limit(1).get();
-
-      print('Number of documents in query result: ${querySnapshot.docs.length}');
-
-      if (querySnapshot.docs.isNotEmpty) {
-        DocumentSnapshot apiKeyDoc = querySnapshot.docs.first;
-        return apiKeyDoc.get('apiKeyField') as String?;
-      } else {
-        print('No API key documents found.');
-        return null;
-      }
-    } catch (e) {
-      print('Error retrieving API key: $e');
-      return null;
-    }
-  }
-
- Future<Map<String, dynamic>?> getApiInfoFromCloudFunction() async {
+Future<Map<String, dynamic>?> getApiInfoFromCloudFunction() async {
   final HttpsCallable callable = FirebaseFunctions.instance.httpsCallable('getApiInfo');
   try {
     final response = await callable.call();
     final responseData = Map<String, dynamic>.from(response.data);
-    final data = responseData['data']; // Extract data field from response
-    return data;
+    print(responseData);
+    return responseData;
   } on FirebaseFunctionsException catch (e) {
     print('Error calling Cloud Function: ${e.message}');
     return null;
@@ -320,15 +298,14 @@ class _HomeState extends State<Home> {
 
   // Api call for convert text from extracted audio start //
   Future<void> convertAudioToText(String value) async {
-    // String apiUrl = 'https://transcribe.whisperapi.com';
+  final apiInfo = await getApiInfoFromCloudFunction();
+    if (apiInfo != null) {
+      print("API URL: ${apiInfo['apiUrl']}");
+      print("API Key: ${apiInfo['apiKey']}");
+    } else {
+      print("API info not available.");
+    }
 
-    // String apiKey ='Y9T4F5MKEFDF3ZWN6J4HZ8QZFV7YK5VN'; // Retrieve the API key from Firestore
-
-    Map<String, dynamic>? apiInfo = await getApiInfoFromCloudFunction();
-    // if (apiKey == null) {
-    //   print('API key not available.');
-    //   return;
-    // }
     if (apiInfo == null) {
     print('API info not available.');
     return;
@@ -953,7 +930,6 @@ List<Map<String, dynamic>> parseSRTContent(String srtContent) {
         }
       }
     }
-
     return subtitles;
   }
 
