@@ -25,7 +25,6 @@ import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'colors.dart';
 import 'package:video_subtitle_translator/widgets/remainingTimeWidget.dart';
 import 'package:cloud_functions/cloud_functions.dart';
-// import 'package:firebase_storage/firebase_storage.dart' as firebase_storage;
 
 class VideoInfo {
   final File videoFile;
@@ -55,7 +54,8 @@ class _HomeState extends State<Home> {
   String editedSubtitle = '';
   String videoUrl = '';
   String downloadUrl='';
- String fileName = '';
+  String fileName = '';
+  String? selectedFontStyle;
 
   User? user;
 
@@ -71,7 +71,7 @@ class _HomeState extends State<Home> {
 
   late Future<void> initializeVideoPlayerFuture;
   late File videoFile;
-   int currentSubtitleIndex = 0;
+  File? selectedVideoFile;
 
   bool isVideoExist = false;
   bool isVideoPlaying = false;
@@ -88,6 +88,7 @@ class _HomeState extends State<Home> {
   bool isLocalStorageVideo = false;
   bool isGoogleLogin = false;
   bool isEditing = false;
+  bool isSelectStyle= false;
 
   List<String> extractedAudioPaths = [];
   List<String> downloadedVideoPaths = [];
@@ -97,16 +98,15 @@ class _HomeState extends State<Home> {
   double remainingTime = 900;
   double start=0;
   double end=0;
+  int currentSubtitleIndex = 0;
 
   Duration videoDuration = Duration.zero;
   Duration currentPosition = Duration.zero;
   Timer? durationTimer;
 
-  Color userSelectedBgColor=Colors.black;
+  Color userSelectedBgColor=Colors.black.withOpacity(0.2);
   Color userSelectedTextColor=whiteColor;
-  String? selectedFontStyle;
 
-  File? selectedVideoFile;
 
   @override
   void initState() {
@@ -126,7 +126,7 @@ class _HomeState extends State<Home> {
     super.dispose();
   }
   
-  //Loading User Details//
+  //Loading user details//
   Future<void> loadUserData() async {
     authService.isUserLoggedIn();
     setState(() async {
@@ -136,7 +136,9 @@ class _HomeState extends State<Home> {
       phoneNumber = await authService.getPhoneNo();
     });
   }
+  //Loading user details end//
 
+  //Video playing indicator field//
   Widget buildIndicator() {
     return VideoProgressIndicator(
       controller ?? VideoPlayerController.network(''),
@@ -145,6 +147,7 @@ class _HomeState extends State<Home> {
           playedColor: whiteColor, backgroundColor: borderColor),
     );
   }
+  //Video playing indicator field end//
   
   //Video timing while playing//
   void _updateCurrentPosition() {
@@ -162,22 +165,27 @@ class _HomeState extends State<Home> {
       currentPosition = controller?.value.position ?? Duration.zero;
     });
   }
+  //Video timing while playing end//
 
+  //Time duration calculation of video//
   String _formatDuration(Duration duration) {
     String twoDigits(int n) => n.toString().padLeft(2, '0');
     String minutes = twoDigits(duration.inMinutes.remainder(60));
     String seconds = twoDigits(duration.inSeconds.remainder(60));
     return "$minutes:$seconds";
   }
+  //Time duration calculation of video end//
 
+  //Generate video id//
   String generateVideoId() {
     // Generate a unique video ID using a timestamp and a random number
     int timestamp = DateTime.now().millisecondsSinceEpoch;
     int randomNumber = Random().nextInt(999999);
     return '$timestamp$randomNumber';
   }
+  //Generate video id end//
 
-  //Get video from phone storage start//
+  //Get video from phone storage//
   Future<void> getVideo() async {
     final picker = ImagePicker();
     final pickedFile = await picker.pickVideo(source: ImageSource.gallery);
@@ -441,7 +449,9 @@ class _HomeState extends State<Home> {
   }
   //Generate SRT File Start//
   
-  String generateSRT(List<Map<String, dynamic>> subtitleLines) {
+  String generateSRT(List<Map<String, dynamic>> subtitleLines, 
+  // Color textColor, Color bgColor, String font
+  ) {
     StringBuffer srtContent = StringBuffer();
     
     for (int i = 0; i < subtitleLines.length; i++) {
@@ -453,15 +463,21 @@ class _HomeState extends State<Home> {
       String startTime = formatTime(startInSeconds);
       String endTime = formatTime(endInSeconds);
 
+  // Create formatted HTML-like subtitle text
+    // String formattedText = '<font color="${_getColorHexCode(textColor)}" bgcolor="${_getColorHexCode(bgColor)}" face="$font">$text</font>';
       srtContent.writeln('${i + 1}');
       srtContent.writeln('$startTime --> $endTime');
       srtContent.writeln(text);
+      // srtContent.writeln(formattedText);
       srtContent.writeln();
     }
     
     return srtContent.toString();
   }
   //Generate SRT File End//
+String _getColorHexCode(Color color) {
+  return '#${color.value.toRadixString(16).padLeft(8, '0')}';
+}
 
   //Save SRT File Start//
   void saveSRTToFile(String srtContent) {
@@ -473,10 +489,11 @@ class _HomeState extends State<Home> {
 //Download SRT File Start//
   Future<void> downloadSRTFile() async {
     String srtContent = generateSRT((subtitleLines));
+    // generateSRT(subtitleLines, userSelectedTextColor, userSelectedBgColor, selectedFontStyle!);
     String videoId = generateVideoId();
 
     Directory? appDocumentsDirectory = await getExternalStorageDirectory();
-    String filePath = '${appDocumentsDirectory?.path}/subtitle.srt';
+    String filePath = '${appDocumentsDirectory?.path}/subtitles.srt';
 
     File file = File(filePath);
     await file.writeAsString(srtContent);
@@ -643,6 +660,9 @@ class _HomeState extends State<Home> {
       if (isVideoPlaying == true) {
         controller?.pause();
       }
+      if (isVideoPlaying == true) {
+        youtubeController?.pause();
+      }
       urlController.clear();
       subtitleLines = [];
       subtitles = '';
@@ -659,16 +679,31 @@ class _HomeState extends State<Home> {
 
         if (videoId != null) {
           final video = await ytExplode.videos.get(videoId);
-
-          setState(() {
-            youtubeController = YoutubePlayerController(
-              initialVideoId: videoId,
-              flags: const YoutubePlayerFlags(
-                autoPlay: false,
-              ),
-            );
-            isVideoExist = true;
-          });
+          if(video.duration!.inSeconds<=60){
+            setState(() {
+              youtubeController = YoutubePlayerController(
+                initialVideoId: videoId,
+                flags: const YoutubePlayerFlags(
+                  autoPlay: false,
+                ),
+              );
+              isVideoExist = true;
+              videoDuration = video.duration!;
+            });
+            late Timer positionTimer;
+          positionTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+            setState(() {
+              currentPosition = youtubeController!.value.position;
+            });
+            });
+          }
+          else{
+            urlController!.clear();
+             ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+              content: Text(select60MVideMsg), backgroundColor: primaryColor),
+        );
+          }
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -713,8 +748,11 @@ class _HomeState extends State<Home> {
         final response = await http.get(Uri.parse(videoUrl));
         if (response.statusCode == 200) {
           final appDocumentsDir = await getExternalStorageDirectory();
-          String outputPath =
-              '${appDocumentsDir?.path}/video${DateTime.now().millisecondsSinceEpoch}.mp4';
+          // final appDocumentsDir = await getApplicationDocumentsDirectory();
+
+          // String outputPath ='${appDocumentsDir?.path}/video${DateTime.now().millisecondsSinceEpoch}.mp4';
+          String outputPath ='${appDocumentsDir?.path}/video$videoId.mp4';
+
           final videoFile = File('${appDocumentsDir?.path}/video.mp4');
           await videoFile.writeAsBytes(response.bodyBytes);
 
@@ -919,16 +957,19 @@ List<Map<String, dynamic>> parseSRTContent(String srtContent) {
 
 Future<void> downloadVideoWithSubtitles() async {
   final appDocumentsDir = await getExternalStorageDirectory();
-  final String downloadPath = '${appDocumentsDir?.path}/video${DateTime.now().millisecondsSinceEpoch}.mp4'; // Adjust the path
-  final String videoFilePath =videoUrl;
+
+  final String downloadPath = '${appDocumentsDir?.path}/video${DateTime.now().millisecondsSinceEpoch}.mkv'; // Adjust the path
+  String videoFilePath='';
+  if(isLocalStorageVideo) {
+     videoFilePath =videoUrl;
+  
   // Generate and save SRT subtitles
   final String subtitles = generateSRT(subtitleLines);
+  // generateSRT(subtitleLines, userSelectedTextColor, userSelectedBgColor, selectedFontStyle!);
   final String subtitleFilePath = '${appDocumentsDir?.path}/subtitles.srt';
   await File(subtitleFilePath).writeAsString(subtitles);
-  // File(subtitleFilePath).writeAsStringSync(subtitles);
   final flutterFFmpeg = FlutterFFmpeg();
-  // final  int result = await flutterFFmpeg.execute ('-i $videoUrl -i $subtitleFilePath -c:v copy -c:a copy -c:s mov_text $downloadPath');
-final int result = await flutterFFmpeg.execute('-i $videoFilePath -i $subtitleFilePath -c:v copy -c:s mov_text $downloadPath');
+  final int result = await flutterFFmpeg.execute('-i $videoFilePath -i $subtitleFilePath $downloadPath');
 
   // // Append subtitles to the downloaded video
   if (result == 0) {
@@ -940,65 +981,42 @@ final int result = await flutterFFmpeg.execute('-i $videoFilePath -i $subtitleFi
     print('FFmpeg logs:');
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Video Downloading failed'), backgroundColor: primaryColor),);
   }
+  }
+
+  else{
+    final youtube = YoutubeExplode();
+    final videoId = YoutubePlayer.convertUrlToId(videoUrl);
+    var manifest = await youtube.videos.streamsClient.getManifest(videoId);
+    var streamsAudio=manifest.audioOnly;
+    var audio=streamsAudio.first;
+    Uri audioStreamUrl = audio.url;
+
+    var streams= manifest.videoOnly;
+    var video = streams.first;
+    Uri videoStreamUrl = video.url;
+
+    final appDocumentsDir = await getExternalStorageDirectory();
+    videoFilePath='${appDocumentsDir?.path}/video$videoId.mp4';
+
+    // Generate and save SRT subtitles
+  final String subtitles = generateSRT(subtitleLines);
+  // generateSRT(subtitleLines, userSelectedTextColor, userSelectedBgColor, selectedFontStyle!);
+  final String subtitleFilePath = '${appDocumentsDir?.path}/subtitles.srt';
+  await File(subtitleFilePath).writeAsString(subtitles);
+  final flutterFFmpeg = FlutterFFmpeg();
+ final int result = await flutterFFmpeg.execute('-i $videoStreamUrl -i $audioStreamUrl -i $subtitleFilePath -c:a copy -c:v copy $downloadPath');
+  // // Append subtitles to the downloaded video
+  if (result == 0) {
+    print('Video with subtitles downloaded successfully');
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Video Downloaded'), backgroundColor: primaryColor),);
+  } 
+  else {
+    print('Error embedding subtitles.');
+    print('FFmpeg logs:');
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Video Downloading failed'), backgroundColor: primaryColor),);
+  }
+  }
 }
-
-
-// Future<void> downloadVideoWithSubtitles() async {
-//   final appDocumentsDir = await getApplicationDocumentsDirectory();
-//   final String subtitleFilePath = '${appDocumentsDir.path}/subtitle.srt';
-//   final documentDir= await getExternalStorageDirectory();
-
-//   // Generate and save SRT subtitles
-//   final String subtitles = generateSRT(subtitleLines);
-//   File(subtitleFilePath).writeAsStringSync(subtitles);
-
-//   // Define the output video path
-//   final String outputVideoPath = '${appDocumentsDir.path}/video_with_subtitles.mp4';
-
-//   // Use flutter_ffmpeg to embed subtitles into the video
-//   final FlutterFFmpeg flutterFFmpeg = FlutterFFmpeg();
-//   final int rc = await flutterFFmpeg.execute(
-//     '-i ${videoFile.path} -i $subtitleFilePath -c:v copy -c:a copy -c:s mov_text $outputVideoPath',
-//   );
-
-//   if (rc == 0) {
-//     print('Video with subtitles embedded successfully');
-
-//     // Now you can download the video with subtitles
-//     final String downloadPath = '${documentDir!.path}/downloaded_video_with_subtitles.mp4'; // Adjust as needed
-//     final File outputVideoFile = File(outputVideoPath);
-//     outputVideoFile.copySync(downloadPath);
-
-//     print('Video with subtitles downloaded successfully');
-//   } else {
-//     print('Error embedding subtitles or saving video.');
-//   }
-// }
-
-// Future<void> saveVideoToFirestoreAndStorage(File videoFile) async {
-//   final storageRef = firebase_storage.FirebaseStorage.instance.ref();
-//   final videoRef = storageRef.child('videos/${DateTime.now().millisecondsSinceEpoch}.mp4');
-
-//   // Upload the video file to Firebase Storage
-//   await videoRef.putFile(videoFile);
-
-//   // Get the download URL for the uploaded video
-//   final videoUrl = await videoRef.getDownloadURL();
-
-//   // Save the video URL to Firestore
-//   await FirebaseFirestore.instance.collection('videos').add({
-//     'url': videoUrl,
-//     'timestamp': FieldValue.serverTimestamp(),
-//   });
-// }
-
-// late List<String> videoUrls = [];
-// Future<List<String>> fetchVideosFromFirestore() async {
-//   final snapshot = await FirebaseFirestore.instance.collection('videos').get();
-
-//   final videoUrls = snapshot.docs.map((doc) => doc['url'] as String).toList();
-//   return videoUrls;
-// }
 
 List<String> getAvailableFontStyles() {
   return GoogleFonts.asMap().keys.toList();
@@ -1062,9 +1080,9 @@ List<String> getAvailableFontStyles() {
               icon: const Icon(Icons.menu),
               offset: const Offset(0, 48),
               onSelected: (value) {
-                if (value == 'Item 1') {
-                } else if (value == 'Item 2') {
-                } else if (value == 'Item 3') {}
+                if (value == 'Item 1') {} 
+                else if (value == 'Item 2') {}
+                else if (value == 'Item 3') {}
               },
               itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
                 //Profile Field//
@@ -1079,16 +1097,6 @@ List<String> getAvailableFontStyles() {
                     text: profileString,
                   ),
                 ),
-                //Language Field//
-                // PopupMenuItem<String>(
-                //   padding: const EdgeInsets.only(left: 20, right: 50),
-                //   value: 'Item 2',
-                //   child: RowWIthIconTextbuttonWidget(
-                //     onPressed: () {},
-                //     icon: Icons.language,
-                //     text: languageString,
-                //   ),
-                // ),
                 //Logout Field//
                 PopupMenuItem<String>(
                   padding: const EdgeInsets.only(left: 20, right: 50),
@@ -1116,9 +1124,7 @@ List<String> getAvailableFontStyles() {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
                   //Import Video Field Start//
-                  if (!isVideoExist || isVideoExist) RemainingTimeWidget(
-                      // _auth.currentUser!.email,
-                      _auth.currentUser?.uid),
+                  if (!isVideoExist || isVideoExist) RemainingTimeWidget(_auth.currentUser?.uid),
                   if (!isVideoExist)
                     Container(
                       margin: EdgeInsets.only(top: width / 2.2),
@@ -1133,12 +1139,8 @@ List<String> getAvailableFontStyles() {
                             },
                             backgroundColor: primaryColor,
                             child: const RowWithIconTextWidget(
-                              text: importVideoString,
-                              icon: Icons.video_collection,
-                              iconSize: 20,
-                              iconColor: whiteColor,
-                              textColor: whiteColor,
-                              fontSize: 20,
+                              text: importVideoString,textColor: whiteColor,fontSize: 20,
+                              icon: Icons.video_collection,iconSize: 20,iconColor: whiteColor,
                             ),
                           ),
                           //Import Video Field End//
@@ -1150,12 +1152,8 @@ List<String> getAvailableFontStyles() {
                             },
                             backgroundColor: primaryColor,
                             child: const RowWithIconTextWidget(
-                              text: importUrlString,
-                              icon: CupertinoIcons.link,
-                              iconSize: 20,
-                              iconColor: whiteColor,
-                              textColor: whiteColor,
-                              fontSize: 20,
+                              textColor: whiteColor,text: importUrlString,fontSize: 20,
+                              icon: CupertinoIcons.link,iconSize: 20,iconColor: whiteColor,
                             ),
                           ),
                           //
@@ -1172,220 +1170,374 @@ List<String> getAvailableFontStyles() {
                       decoration: boxDecoration1,
                       child: Column(
                         children: [
-                          // isLocalStorageVideo
-                          //     ? const Text(
-                          //         "You can't create subtitles for youtube videos here.If you want that go back. Select second option")
-                          //     : Container(),
                           Center(
                             child: Container(
                               width: 300,
                               height: 250,
-                              margin: const EdgeInsets.only(
-                                  top: 10, left: 10, right: 10),
-
-
-
+                              margin: const EdgeInsets.only(top: 10, left: 10, right: 10),
                               decoration: boxDecoration2,
                               child: Stack(
                                 alignment: Alignment.center,
                                 children: [
                                   if (isLocalStorageVideo)
-                                    Stack(
-                                      alignment: Alignment.center,
-                                      children: [
-                                         AspectRatio(
-                                    aspectRatio: controller!.value.aspectRatio,
-                                    child: Stack(
-                                      children: [
-                                        GestureDetector(
-                                          onTap: () {
-                                            setState(() {
-                                              isControlVisible = !isControlVisible;
-                                            });
-                                          },
-                                          child: VideoPlayer(controller!),
-                                        ),
-                                        if (!isEditing)
-                                          Positioned(
-                                          bottom: 10,
-                                          left: 10,
-                                          right: 10,
-                                          child: Container(
-                                            color: userSelectedBgColor,
-                                            padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 8.0),
-                                            child: Text(
-                                              getSubtitleForCurrentPosition(controller!.value.position),
-                                              style: TextStyle(color: userSelectedTextColor, fontSize: 14,fontFamily: selectedFontStyle),
-                                            ),
-                                          ),
-                                        ),
-                                        ],
-                                      ),
-                                    ),
-                                    Align(
-                                      alignment: Alignment.topRight,
-                                      child: PopupMenuButton<String>(
-                                      icon: const Icon(Icons.more_vert),
-                                      offset: const Offset(0, 26),
-                                      onSelected: (value) {
-                                        if (value == 'Item 1') {
-                                        } else if (value == 'Item 2') {
-                                        } else if (value == 'Item 3') {}
-                                      },
-                                      itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-                                        //Change subtitle text color//
-                                        PopupMenuItem<String>(
-                                          padding: const EdgeInsets.only(left: 20,right: 8),
-                                          value: 'Item 1',
-                                          child: Row(
-                                            children: [
-                                              const Icon(Icons.abc, color: primaryColor),
-                                              const SizedBox(width: 10),
-                                              TextButton(
-                                                  onPressed: () async {
-                                                    await showDialog(
-                                                    context: context,
-                                                    builder: (BuildContext context) {
-                                                      return TextColorPickerDialog(
-                                                        pickerColor: userSelectedTextColor,
-                                                        onColorChanged: (colortxt) {
-                                                          print("Selected color: $colortxt");
-                                                          setState(() {
-                                                            userSelectedTextColor=colortxt ;
-                                                          });
-                                                        },
-                                                      );
-                                                    },
-                                                  );
-                                                  if (userSelectedTextColor != null) {
-                                                    saveColorsToFirestore(userSelectedTextColor,userSelectedBgColor);
-                                                  }
-                                                },
-                                                child: const Text('Edit Text Color',
-                                                style: TextStyle(color: primaryColor))),
-                                            ],
-                                          ),
-                                        ),
-                                        //Change subtitle background color//
-                                        PopupMenuItem<String>(
-                                          padding: const EdgeInsets.only(left: 20,right: 8),
-                                          value: 'Item 2',
-                                          child: Row(
-                                            children: [
-                                              const Icon(Icons.color_lens, color: primaryColor),
-                                              const SizedBox(width: 10),
-                                              TextButton(
-                                                  onPressed: () async{
-                                                await showDialog(
-                                                context: context,
-                                                builder: (BuildContext context) {
-                                                  return BackgroundColorPickerDialog(
-                                                    pickerColor: userSelectedBgColor,
-                                                    onColorChanged: (colorbg) {
-                                                      print("Selected color: $colorbg");
-                                                      setState(() {
-                                                        userSelectedBgColor = colorbg;
-                                                      });
-                                                    },
-                                                  );
-                                                },
-                                              );
-                                                if(userSelectedBgColor !=null) {
-                                                saveColorsToFirestore(userSelectedTextColor,userSelectedBgColor);
-                                                }
-                                                  },
-                                                child: const Text('Edit Bg Color',
-                                                style: TextStyle(color: primaryColor)))
-                                            ],
-                                          ),
-                                        ),
-                                        // Change subtitle font style //
-                                       PopupMenuItem<String>(
-                                        padding: const EdgeInsets.only(left: 20,right: 8),
-                                        value: 'Item 3',
-                                        child: Row(
+                                  Stack(
+                                    alignment: Alignment.center,
+                                    children: [
+                                      AspectRatio(
+                                        aspectRatio: controller!.value.aspectRatio,
+                                        child: Stack(
                                           children: [
-                                            const Icon(Icons.font_download_outlined, color: primaryColor),
-                                            const SizedBox(width: 10),
-                                            TextButton(
-                                              onPressed: () async {
-                                                List<String> fontStyles = getAvailableFontStyles();
-                                                await showDialog(
-                                                  context: context,
-                                                  builder: (BuildContext context) {
-                                                    return AlertDialog(
-                                                      title: const Text('Available Font Styles'),
-                                                      content: Container(
-                                                        width: double.maxFinite,
-                                                        child: ListView.builder(
-                                                          itemCount: fontStyles.length,
-                                                          itemBuilder: (context, index) {
-                                                            return ListTile(
-                                                              title: Text(fontStyles[index]),
-                                                              onTap: () {
-                                                                setState(() {
-                                                                  selectedFontStyle = fontStyles[index];
-                                                                  saveColorsToFirestore(userSelectedTextColor,userSelectedBgColor);
-                                                                });
-                                                                Navigator.pop(context);
-                                                                Navigator.pop(context);
-                                                              },
-                                                            );
-                                                          },
-                                                        ),
-                                                      ),
-                                                    );
-                                                  },
-                                                );
+                                            GestureDetector(
+                                              onTap: () {
+                                                setState(() {
+                                                  isControlVisible = !isControlVisible;
+                                                });
                                               },
-                                              child: const Text('Edit Font Style', style: TextStyle(color: primaryColor)),
+                                              child: VideoPlayer(controller!),
+                                            ),
+                                            if (!isEditing)
+                                            Positioned(
+                                              bottom: 10,
+                                              left: 10,
+                                              right: 10,
+                                              child: Container(
+                                                color: userSelectedBgColor,
+                                                padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 8.0),
+                                                child: Text(
+                                                  getSubtitleForCurrentPosition(controller!.value.position),
+                                                  style: 
+                                                  // TextStyle(color: userSelectedTextColor, fontSize: 14,fontFamily: selectedFontStyle),
+                                                  isSelectStyle?
+                                                    GoogleFonts.getFont(
+                                                          selectedFontStyle! ,
+                                                          fontSize: 14,
+                                                          fontWeight: FontWeight.bold,
+                                                          color: userSelectedTextColor,
+                                                        ):  TextStyle(fontSize: 14,color: userSelectedTextColor)
+                                                ),
+                                              ),
                                             ),
                                           ],
                                         ),
                                       ),
-                                      ],
-                                    ), 
-                                    ),
+                                      Align(
+                                        alignment: Alignment.topRight,
+                                        child: PopupMenuButton<String>(
+                                        icon: const Icon(Icons.more_vert),
+                                        offset: const Offset(0, 26),
+                                        onSelected: (value) {
+                                          if (value == 'Item 1') {} 
+                                          else if (value == 'Item 2') {} 
+                                          else if (value == 'Item 3') {}
+                                        },
+                                        itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                                          //Change subtitle text color//
+                                          PopupMenuItem<String>(
+                                            padding: const EdgeInsets.only(left: 20,right: 8),
+                                            value: 'Item 1',
+                                            child: Row(
+                                              children: [
+                                                const Icon(Icons.abc, color: primaryColor),
+                                                const SizedBox(width: 10),
+                                                TextButton(
+                                                    onPressed: () async {
+                                                      await showDialog(
+                                                      context: context,
+                                                      builder: (BuildContext context) {
+                                                        return TextColorPickerDialog(
+                                                          pickerColor: userSelectedTextColor,
+                                                          onColorChanged: (colortxt) {
+                                                            print("Selected color: $colortxt");
+                                                            setState(() {
+                                                              userSelectedTextColor=colortxt ;
+                                                            });
+                                                          },
+                                                        );
+                                                      },
+                                                    );
+                                                    if (userSelectedTextColor != null) {
+                                                      saveColorsToFirestore(userSelectedTextColor,userSelectedBgColor);
+                                                    }
+                                                  },
+                                                  child: const Text('Edit Text Color',
+                                                  style: TextStyle(color: primaryColor))),
+                                              ],
+                                            ),
+                                          ),
+                                          //Change subtitle background color//
+                                          PopupMenuItem<String>(
+                                            padding: const EdgeInsets.only(left: 20,right: 8),
+                                            value: 'Item 2',
+                                            child: Row(
+                                              children: [
+                                                const Icon(Icons.color_lens, color: primaryColor),
+                                                const SizedBox(width: 10),
+                                                TextButton(
+                                                    onPressed: () async{
+                                                  await showDialog(
+                                                  context: context,
+                                                  builder: (BuildContext context) {
+                                                    return BackgroundColorPickerDialog(
+                                                      pickerColor: userSelectedBgColor,
+                                                      onColorChanged: (colorbg) {
+                                                        print("Selected color: $colorbg");
+                                                        setState(() {
+                                                          userSelectedBgColor = colorbg;
+                                                        });
+                                                      },
+                                                    );
+                                                  },
+                                                );
+                                                  if(userSelectedBgColor !=null) {
+                                                  saveColorsToFirestore(userSelectedTextColor,userSelectedBgColor);
+                                                  }
+                                                    },
+                                                  child: const Text('Edit Bg Color',
+                                                  style: TextStyle(color: primaryColor)))
+                                              ],
+                                            ),
+                                          ),
+                                          // Change subtitle font style //
+                                        PopupMenuItem<String>(
+                                          padding: const EdgeInsets.only(left: 20,right: 8),
+                                          value: 'Item 3',
+                                          child: Row(
+                                            children: [
+                                              const Icon(Icons.font_download_outlined, color: primaryColor),
+                                              const SizedBox(width: 10),
+                                              TextButton(
+                                                onPressed: () async {
+                                                  List<String> fontStyles = getAvailableFontStyles();
+                                                  await showDialog(
+                                                    context: context,
+                                                    builder: (BuildContext context) {
+                                                      return AlertDialog(
+                                                        title: const Text('Available Font Styles'),
+                                                        content: Container(
+                                                          width: double.maxFinite,
+                                                          child: ListView.builder(
+                                                            itemCount: fontStyles.length,
+                                                            itemBuilder: (context, index) {
+                                                              return ListTile(
+                                                                title: Text(fontStyles[index]),
+                                                                onTap: () {
+                                                                  setState(() {
+                                                                    isSelectStyle=true;
+                                                                    selectedFontStyle = fontStyles[index];
+                                                                    saveColorsToFirestore(userSelectedTextColor,userSelectedBgColor);
+                                                                  });
+                                                                  Navigator.pop(context);
+                                                                  Navigator.pop(context);
+                                                                },
+                                                              );
+                                                            },
+                                                          ),
+                                                        ),
+                                                      );
+                                                    },
+                                                  );
+                                                },
+                                                child: const Text('Edit Font Style', style: TextStyle(color: primaryColor)),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        ],
+                                      ), 
+                                      ),
                                       ],
                                     )
                                   else
-                                    Container(
-                                      width: 300,
-                                      height: 250,
-                                      decoration: BoxDecoration(
-                                        border: Border.all(color: Colors.black),
-                                        borderRadius: const BorderRadius.all(
-                                            Radius.circular(20)),
-                                      ),
-                                      child: youtubeController != null
-                                          ? YoutubePlayer(
-                                              controller: youtubeController!,
-                                              showVideoProgressIndicator: true,
-                                              progressIndicatorColor:
-                                                  Colors.blue,
-                                              progressColors:
-                                                  const ProgressBarColors(
-                                                playedColor: Colors.red,
-                                                handleColor: Colors.black,
+                                    Stack(
+                                    alignment: Alignment.center,
+                                      children: [
+                                        Container(
+                                        width: 300,
+                                        height: 250,
+                                        decoration: BoxDecoration(
+                                          border: Border.all(color: Colors.black),
+                                          borderRadius: const BorderRadius.all(
+                                              Radius.circular(20)),
+                                        ),
+                                        child: youtubeController != null
+                                            ? Stack(
+                                              fit:StackFit.expand,
+                                              children:[ YoutubePlayer(
+                                                controller: youtubeController!,
+                                                showVideoProgressIndicator: true,
+                                                progressIndicatorColor:Colors.blue,
+                                                progressColors:const ProgressBarColors(
+                                                  playedColor: Colors.red,
+                                                  handleColor: Colors.black,
+                                                ),
+                                                onReady: () {
+                                                  // You can disable controls here
+                                                  youtubeController!.setPlaybackRate(1); // Set normal playback rate
+                                                  // youtubeController!.disableControls(); // Disable video controls
+                                                },
                                               ),
-                                            )
-                                          : const Center(
-                                              child:
-                                                  CircularProgressIndicator(),
+                                              Positioned.fill(
+                                                child: GestureDetector(
+                                                  onTap: () {
+                                                    // Implement play/pause logic here
+                                                    if (youtubeController!.value.isPlaying) {
+                                                      youtubeController!.pause();
+                                                    } else {
+                                                      youtubeController!.play();
+                                                    }
+                                                  },
+                                                ),
+                                              ),
+                                      ])
+                                            : const Center(child:CircularProgressIndicator(),),
+                                      ),
+                                      if (!isEditing)
+                                            Positioned(
+                                              bottom: 10,
+                                              left: 10,
+                                              right: 10,
+                                              child: Container(
+                                                color: userSelectedBgColor,
+                                                padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 8.0),
+                                                child: Text(
+                                                  getSubtitleForCurrentPosition(youtubeController!.value.position),
+                                                  style: TextStyle(color: userSelectedTextColor, fontSize: 14,fontFamily: selectedFontStyle),
+                                                ),
+                                              ),
                                             ),
-                                    ),
+                                      Align(
+                                        alignment: Alignment.topRight,
+                                        child: PopupMenuButton<String>(
+                                        icon: const Icon(Icons.more_vert,color: whiteColor,),
+                                        offset: const Offset(0, 26),
+                                        onSelected: (value) {
+                                          if (value == 'Item 1') {} 
+                                          else if (value == 'Item 2') {} 
+                                          else if (value == 'Item 3') {}
+                                        },
+                                        itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                                          //Change subtitle text color//
+                                          PopupMenuItem<String>(
+                                            padding: const EdgeInsets.only(left: 20,right: 8),
+                                            value: 'Item 1',
+                                            child: Row(
+                                              children: [
+                                                const Icon(Icons.abc, color: primaryColor),
+                                                const SizedBox(width: 10),
+                                                TextButton(
+                                                    onPressed: () async {
+                                                      await showDialog(
+                                                      context: context,
+                                                      builder: (BuildContext context) {
+                                                        return TextColorPickerDialog(
+                                                          pickerColor: userSelectedTextColor,
+                                                          onColorChanged: (colortxt) {
+                                                            print("Selected color: $colortxt");
+                                                            setState(() {
+                                                              userSelectedTextColor=colortxt ;
+                                                            });
+                                                          },
+                                                        );
+                                                      },
+                                                    );
+                                                    if (userSelectedTextColor != null) {
+                                                      saveColorsToFirestore(userSelectedTextColor,userSelectedBgColor);
+                                                    }
+                                                  },
+                                                  child: const Text('Edit Text Color',
+                                                  style: TextStyle(color: primaryColor))),
+                                              ],
+                                            ),
+                                          ),
+                                          //Change subtitle background color//
+                                          PopupMenuItem<String>(
+                                            padding: const EdgeInsets.only(left: 20,right: 8),
+                                            value: 'Item 2',
+                                            child: Row(
+                                              children: [
+                                                const Icon(Icons.color_lens, color: primaryColor),
+                                                const SizedBox(width: 10),
+                                                TextButton(
+                                                    onPressed: () async{
+                                                  await showDialog(
+                                                  context: context,
+                                                  builder: (BuildContext context) {
+                                                    return BackgroundColorPickerDialog(
+                                                      pickerColor: userSelectedBgColor,
+                                                      onColorChanged: (colorbg) {
+                                                        print("Selected color: $colorbg");
+                                                        setState(() {
+                                                          userSelectedBgColor = colorbg;
+                                                        });
+                                                      },
+                                                    );
+                                                  },
+                                                );
+                                                  if(userSelectedBgColor !=null) {
+                                                  saveColorsToFirestore(userSelectedTextColor,userSelectedBgColor);
+                                                  }
+                                                    },
+                                                  child: const Text('Edit Bg Color',
+                                                  style: TextStyle(color: primaryColor)))
+                                              ],
+                                            ),
+                                          ),
+                                          // Change subtitle font style //
+                                        PopupMenuItem<String>(
+                                          padding: const EdgeInsets.only(left: 20,right: 8),
+                                          value: 'Item 3',
+                                          child: Row(
+                                            children: [
+                                              const Icon(Icons.font_download_outlined, color: primaryColor),
+                                              const SizedBox(width: 10),
+                                              TextButton(
+                                                onPressed: () async {
+                                                  List<String> fontStyles = getAvailableFontStyles();
+                                                  await showDialog(
+                                                    context: context,
+                                                    builder: (BuildContext context) {
+                                                      return AlertDialog(
+                                                        title: const Text('Available Font Styles'),
+                                                        content: Container(
+                                                          width: double.maxFinite,
+                                                          child: ListView.builder(
+                                                            itemCount: fontStyles.length,
+                                                            itemBuilder: (context, index) {
+                                                              return ListTile(
+                                                                title: Text(fontStyles[index]),
+                                                                onTap: () {
+                                                                  setState(() {
+                                                                    selectedFontStyle = fontStyles[index];
+                                                                    saveColorsToFirestore(userSelectedTextColor,userSelectedBgColor);
+                                                                  });
+                                                                  Navigator.pop(context);
+                                                                  Navigator.pop(context);
+                                                                },
+                                                              );
+                                                            },
+                                                          ),
+                                                        ),
+                                                      );
+                                                    },
+                                                  );
+                                                },
+                                                child: const Text('Edit Font Style', style: TextStyle(color: primaryColor)),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        ],
+                                      ), 
+                                      ),
+                                 ] ),
                                   Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceEvenly,
+                                    mainAxisAlignment:MainAxisAlignment.spaceEvenly,
                                     children: [
                                       VideoPlayingIconsWidget(
                                         visible: isControlVisible,
                                         icon: Icons.fast_rewind,
                                         onPressed: () {
-                                          controller?.seekTo(Duration(
-                                              seconds: controller!.value
-                                                      .position.inSeconds -
-                                                  5));
+                                          controller?.seekTo(Duration(seconds: controller!.value.position.inSeconds -5));
                                         },
                                       ),
                                       if (isLocalStorageVideo)
@@ -1420,8 +1572,12 @@ List<String> getAvailableFontStyles() {
                                   if (isLocalStorageVideo)
                                     VideoDurationShowWidget(
                                       visible: isControlVisible,
-                                      text:
-                                          "${_formatDuration(controller!.value.position)} / ${_formatDuration(videoDuration)}",
+                                      text:"${_formatDuration(controller!.value.position)} / ${_formatDuration(videoDuration)}",
+                                    ),
+                                     if (!isLocalStorageVideo)
+                                    VideoDurationShowWidget(
+                                      visible: isControlVisible,
+                                      text:"${_formatDuration(youtubeController!.value.position)} / ${_formatDuration(videoDuration)}",
                                     ),
                                   if (isLocalStorageVideo)
                                     VideoAudioIconWidget(
@@ -1494,6 +1650,7 @@ List<String> getAvailableFontStyles() {
                           if (!isLocalStorageVideo)
                             ElevatedButtonCircularWidget(
                               onPressed: () async {
+
                                 downloadYoutubeVideo();
                                 fetchVideoInfoAndExtractAudio(
                                     urlController.text);
@@ -1528,10 +1685,8 @@ List<String> getAvailableFontStyles() {
                                               String text =subtitleLines[index]['text'];
                                               double start =subtitleLines[index]['start'] *1000;
                                               double end = subtitleLines[index]['end'] *1000;
-                                                                                
                                               Duration currentPosition =controller!.value.position;
                                               bool isHighlighted =currentPosition.inMilliseconds >=start &&currentPosition.inMilliseconds <=end;
-                                                                                
                                               TextEditingController subtitleController =TextEditingController(text: text);
                                                                                 
                                               // Move the cursor to the end of the text when editing
@@ -1652,55 +1807,173 @@ List<String> getAvailableFontStyles() {
                                         double end =subtitleLines[index]['end'] * 1000;
                                         Duration currentPosition =youtubeController!.value.position;
                                         bool isHighlighted = currentPosition.inMilliseconds >=start &&currentPosition.inMilliseconds <=end;
-                                        return Row(
-                                          mainAxisAlignment: isHighlighted? MainAxisAlignment.center: MainAxisAlignment.center,
-                                          children: [
-                                            Flexible(
-                                              child: Text(
-                                                text,
-                                                textAlign: TextAlign.center,
-                                                style: TextStyle(
-                                                  fontSize:isHighlighted ? 17 : 14,
-                                                  color: isHighlighted? Colors.green: blackColor,
-                                                  fontWeight: isHighlighted? FontWeight.bold: FontWeight.normal,
+                                        TextEditingController subtitleController =TextEditingController(text: text);
+                                        if (isEditing && isHighlighted) {
+                                          final newCursorPosition =subtitleController.text.length;
+                                          subtitleController.selection =TextSelection.fromPosition(TextPosition(offset:newCursorPosition));
+                                        }
+
+                                        return Container(
+                                          padding: const EdgeInsets.all(10),
+                                            decoration:BoxDecoration(
+                                              color: isHighlighted ? primaryColor : Colors.transparent,
+                                              borderRadius: BorderRadius.circular(10),
+                                            ),
+                                          child: Row(
+                                            mainAxisAlignment: isHighlighted? MainAxisAlignment.center: MainAxisAlignment.center,
+                                            children: [
+                                              Flexible(
+                                                child: isEditing && isHighlighted?
+                                                TextField(
+                                                            decoration: InputDecoration(
+                                                              border:InputBorder.none,
+                                                              suffixIcon: IconButton(
+                                                                onPressed:() async{
+                                                                    setState(() {
+                                                                      isVideoPlaying = true;
+                                                                      youtubeController?.play();
+                                                                      isEditing=false;
+                                                                      Get.back();
+                                                                    });
+                                                                },
+                                                                icon:const Icon(Icons.check,color: whiteColor,)
+                                                               )
+                                                              ),
+                                                            controller:subtitleController,
+                                                            onChanged:(newText) {
+                                                              setState(() {
+                                                                subtitleLines[index]['text'] =newText;
+                                                              });
+                                                            },
+                                                            style: const TextStyle(
+                                                              color: whiteColor,
+                                                              fontSize: 16,
+                                                              fontWeight: FontWeight.bold,
+                                                            ),
+                                                            
+                                                          ):
+                                                SelectableText(
+                                                  text,
+                                                  textAlign: TextAlign.center,
+                                                  style: TextStyle(
+                                                    fontSize:isHighlighted ? 17 : 14,
+                                                    color: isHighlighted? whiteColor: blackColor,
+                                                    fontWeight: isHighlighted? FontWeight.bold: FontWeight.normal,
+                                                  ),
                                                 ),
                                               ),
-                                            ),
-                                            const SizedBox(height: 25)
-                                          ],
+                                              if(isHighlighted && !isEditing)
+                                                                IconButton(
+                                                                  onPressed:(){
+                                                                     setState(() {
+                                                                      if(isHighlighted){
+                                                                        isEditing = true;
+                                                                        isVideoPlaying = false;
+                                                                        controller?.pause();
+                                                                      }
+                                                                    });
+                                                                  },
+                                                                  icon:const Icon(Icons.edit,color: whiteColor,size: 16,)
+                                                                  ),
+                                              const SizedBox(height: 25)
+                                            ],
+                                          ),
                                         );
                                       },
                                     ),
                                   ),
-                              const SizedBox(height: 20),
+                                  isEditing?
+                                             Align(
+                                              alignment: Alignment.bottomRight,
+                                              child: Container(
+                                                margin: const EdgeInsets.only(right: 20,bottom: 10),
+                                                child: ElevatedButton(
+                                                  style: ElevatedButton.styleFrom(backgroundColor: primaryColor),
+                                                    onPressed: () {
+                                                      // Convert the updated subtitleLines list to a JSON string
+                                                      String updatedSubtitle = json.encode({'segments': subtitleLines});
+                                                    
+                                                      // Call the function to save the updated subtitles to Firestore
+                                                      saveSubtitleToFirestore(updatedSubtitle);
+                                                      setState(() {
+                                                        editedSubtitle =updatedSubtitle;
+                                                        isVideoPlaying=true;
+                                                        youtubeController?.play();
+                                                      });
+                                                    },
+                                                    child: const Text('Save',style: TextStyle(color: whiteColor),),
+                                                  ),
+                                              ),
+                                            )
+                                            : const SizedBox(),
+                                            SizedBox(height: 10,),
                               Container(
                                 margin: const EdgeInsets.only(left: 10),
-                                child: Row(
-                                  mainAxisAlignment:MainAxisAlignment.spaceBetween,
+                                child: Column(
                                   children: [
-                                    ElevatedButtonCircularWidget(
-                                        onPressed: () {
+                                    Container(
+                                      height: 40,
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: Border.all(color: primaryColor),
+                                      ),
+                                      child: TextButton(
+                                        onPressed: (){
                                           showAlertDialog();
-                                        },
-                                        backgroundColor: whiteColor,
-                                        child: const RowWithIconTextWidget(
-                                          text: discardString,
-                                          textColor: primaryColor,
-                                          fontSize: 15,
-                                          icon: Icons.delete,
-                                          iconColor: primaryColor,
-                                        )),
-                                    subtitles.isNotEmpty
-                                        ? ElevatedButtonCircularWidget(
-                                            onPressed: () {
-                                              downloadSRTFile();
-                                            },
-                                            backgroundColor: primaryColor,
-                                            child: const RowWithIconTextWidget(text: downloadSRTString,icon: Icons.download))
-                                        : Container(),
+                                        }, 
+                                        child: Row(
+                                          children: const [
+                                            Icon(Icons.delete,size: 20,color: primaryColor,),
+                                            SizedBox(width: 5,),
+                                            Text('Discard',style:TextStyle(color: primaryColor)),
+                                          ],
+                                        )
+                                      ),
+                                    ),
+                                    if(subtitles.isNotEmpty)
+                                    Container(
+                                      height: 40,
+                                       decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: Border.all(color: primaryColor),
+                                      ),
+                                      child: TextButton(
+                                        onPressed: (){
+                                           downloadSRTFile();
+                                        }, 
+                                        child: Row(
+                                          children: const [
+                                            Icon(Icons.download_for_offline,size: 20,color: primaryColor,),
+                                            SizedBox(width: 5,),
+                                            Text('Download SRT File',style:TextStyle(color: primaryColor)),
+                                          ],
+                                        )
+                                      ),
+                                    ),
+                                    if(subtitles.isNotEmpty)
+                                    Container(
+                                      height: 40,
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: Border.all(color: primaryColor),
+                                      ),
+                                      child: TextButton(
+                                        onPressed: (){
+                                          downloadVideoWithSubtitles();
+                                        }, 
+                                        child: Row(
+                                          children: const [
+                                            Icon(Icons.download,size: 20,color: primaryColor,),
+                                            SizedBox(width: 5,),
+                                            Text('Download with subtitle',style:TextStyle(color: primaryColor)),
+                                          ],
+                                        )
+                                      ),
+                                    )
                                   ],
                                 ),
                               ),
+                              
                             ],
                           ),
                           const SizedBox(height: 10,),
@@ -1708,44 +1981,6 @@ List<String> getAvailableFontStyles() {
                       ),
                     ),
                     const SizedBox(height: 10,),
-                    const Divider(color: borderColor,),
-                    if(subtitles.isNotEmpty)
-                Container(
-                  width: width,
-                  padding: const EdgeInsets.all(10),
-                  decoration: boxDecoration1,
-                   margin: const EdgeInsets.only(top: 10),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.start,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Text('Video Name:$videoName',style: const TextStyle(color: primaryColor,fontSize: 12),),
-                      // const Divider(color: borderColor,),
-                      // Text('Video Duration:$videoDuration',style: const TextStyle(color: primaryColor,fontSize: 12),),
-                      // const Divider(color: borderColor,),
-                      TextButton(
-                        onPressed: () {
-                          downloadVideoWithSubtitles();
-                        },
-                        child: const Text('Download Video with Subtitles',),
-                      ),
-                      // Expanded(
-                      //   child: ListView.builder(
-                      //     itemCount: videoUrls.length,
-                      //     itemBuilder: (context, index) {
-                      //       return ListTile(
-                      //         title: Text('Video ${index + 1}'),
-                      //         onTap: () {
-                      //           // Handle tapping on a video
-                      //           // For example, navigate to a video player screen with the selected video URL
-                      //         },
-                      //       );
-                      //     },
-                      //   ),
-                      // ),
-                    ],
-                  ),
-                ),
                 ],
               ),
             ),

@@ -42,7 +42,7 @@ const String exampleNoString = "(eg:+94771234567)";
 //Messages//
 const String importVideoUrlMsg = "Import your video URL";
 const String subtitleCreateSuccessMsg = "Successfully created subtitles";
-const String srtFileCreateSuccessMsg = "Your SRT file Successfully downloaded";
+const String srtFileCreateSuccessMsg = "Your SRT file successfully downloaded";
 const String srtFileCreateFailMsg = "Error occured in downloading SRT file:";
 const String signInSuccessMsg = "Logged In!";
 const String selectVideoMsg = "Please select a video first";
