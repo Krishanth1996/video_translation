@@ -4,17 +4,19 @@ import 'dart:io';
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
+import 'package:firebase_storage/firebase_storage.dart' ;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_ffmpeg/flutter_ffmpeg.dart';
 import 'package:get/get.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:video_player/video_player.dart';
 import 'package:http/http.dart' as http;
 import 'package:video_subtitle_translator/constants.dart';
 import 'package:video_subtitle_translator/services/firebase_services.dart';
+import 'package:video_subtitle_translator/widgets/subtitle_colors.dart';
 import 'package:video_subtitle_translator/widgets/widgets.dart';
 import 'package:video_subtitle_translator/widgets/loading_screen.dart';
 import 'package:video_subtitle_translator/widgets/showSheet_screen.dart';
@@ -23,7 +25,14 @@ import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'colors.dart';
 import 'package:video_subtitle_translator/widgets/remainingTimeWidget.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+// import 'package:firebase_storage/firebase_storage.dart' as firebase_storage;
 
+class VideoInfo {
+  final File videoFile;
+  final String subtitle;
+
+  VideoInfo(this.videoFile, this.subtitle);
+}
 
 class Home extends StatefulWidget {
   const Home({super.key});
@@ -92,6 +101,12 @@ class _HomeState extends State<Home> {
   Duration videoDuration = Duration.zero;
   Duration currentPosition = Duration.zero;
   Timer? durationTimer;
+
+  Color userSelectedBgColor=Colors.black;
+  Color userSelectedTextColor=whiteColor;
+  String? selectedFontStyle;
+
+  File? selectedVideoFile;
 
   @override
   void initState() {
@@ -170,12 +185,15 @@ class _HomeState extends State<Home> {
       final videoPlayerController =VideoPlayerController.file(File(pickedFile.path));
       videoName = pickedFile.name;
       videoFile = File(pickedFile.path);
+      videoUrl=pickedFile.path;
       // Initialize the video player controller
       await videoPlayerController.initialize();
       await videoPlayerController.play();
 
       // Set the video duration
       setState(() {
+        // selectedVideoFile = File(pickedFile.path);
+        // final videoPlayerController = VideoPlayerController.file(selectedVideoFile!);
         videoDuration = videoPlayerController.value.duration;
       });
 
@@ -207,8 +225,6 @@ class _HomeState extends State<Home> {
       videoPlayerController.dispose();
       setState(() {
         videoFile = File(pickedFile.path);
-        print("print$videoFile");
-
         controller = VideoPlayerController.file(videoFile);
         initializeVideoPlayerFuture = controller!.initialize();
 
@@ -230,29 +246,24 @@ class _HomeState extends State<Home> {
   // Extract audio from imported video Start//
   Future<void> extractAudioFromVideo() async {
     Directory? appDir = await getExternalStorageDirectory();
-    final String outputPath =
-        '${appDir?.path}/audio${DateTime.now().millisecondsSinceEpoch}.m4a';
+    final String outputPath ='${appDir?.path}/audio${DateTime.now().millisecondsSinceEpoch}.m4a';
     String videoId = generateVideoId();
-    var result = await flutterFFmpeg
-        .execute('-i ${videoFile.path} -vn -c:a aac $outputPath');
+    var result = await flutterFFmpeg.execute('-i ${videoFile.path} -vn -c:a aac $outputPath');
     // Audio extraction successful
     if (result == 0) {
       setState(() {
         extractedAudioPaths.add(outputPath);
         showLoadingPopup = false;
-        print('Successfully audio extract');
       });
       uploadAudioFileToStorage(outputPath, videoId);
-
       // Calculate audio duration
       File audioFile = File(outputPath);
       int fileSizeInBytes = await audioFile.length();
       double bitRate = 128000;
       durationInSeconds = fileSizeInBytes * 8 / bitRate;
-
-      print("Extracted audio duration: $durationInSeconds seconds");
       showSubtitleSelectionSheet(context);
-    } else if (result == 1) {
+    } 
+    else if (result == 1) {
       final youtube = YoutubeExplode();
       var manifest = await youtube.videos.streamsClient.getManifest(videoId);
       var streams = manifest.audioOnly;
@@ -282,15 +293,13 @@ class _HomeState extends State<Home> {
   }
   // Extract audio from imported video End//
 
-Future<Map<String, dynamic>?> getApiInfoFromCloudFunction() async {
+  Future<Map<String, dynamic>?> getApiInfoFromCloudFunction() async {
   final HttpsCallable callable = FirebaseFunctions.instance.httpsCallable('getApiInfo');
   try {
     final response = await callable.call();
     final responseData = Map<String, dynamic>.from(response.data);
-    print(responseData);
     return responseData;
   } on FirebaseFunctionsException catch (e) {
-    print('Error calling Cloud Function: ${e.message}');
     return null;
   }
 }
@@ -299,15 +308,8 @@ Future<Map<String, dynamic>?> getApiInfoFromCloudFunction() async {
   // Api call for convert text from extracted audio start //
   Future<void> convertAudioToText(String value) async {
   final apiInfo = await getApiInfoFromCloudFunction();
-    if (apiInfo != null) {
-      print("API URL: ${apiInfo['apiUrl']}");
-      print("API Key: ${apiInfo['apiKey']}");
-    } else {
-      print("API info not available.");
-    }
 
     if (apiInfo == null) {
-    print('API info not available.');
     return;
   }
 
@@ -337,10 +339,10 @@ Future<Map<String, dynamic>?> getApiInfoFromCloudFunction() async {
 
     if (response.statusCode == 200) {
       var responseBody = await response.stream.bytesToString();
-      print(responseBody);
 
       // Save the subtitle to Firestore
       saveSubtitleToFirestore(responseBody);
+      // saveVideoToFirestoreAndStorage(videoUrl);
 
       // ignore: use_build_context_synchronously
       ScaffoldMessenger.of(context).showSnackBar(
@@ -351,7 +353,6 @@ Future<Map<String, dynamic>?> getApiInfoFromCloudFunction() async {
         ),
       );
     } else {
-      print('Request failed with status: ${response.statusCode}');
 
       // ignore: use_build_context_synchronously
       ScaffoldMessenger.of(context).showSnackBar(
@@ -376,11 +377,7 @@ Future<Map<String, dynamic>?> getApiInfoFromCloudFunction() async {
         usersCollection.doc(uid).update({
           'transcriptions': FieldValue.arrayUnion([subtitle]),
           'timestamp': FieldValue.serverTimestamp(),
-        }).then((_) {
-          print('Subtitle updated for user: $uid');
-        }).catchError((error) {
-          print('Error updating user data: $error');
-        });
+        }).then((_) {}).catchError((error) {});
       } else {
         usersCollection.doc(uid).set({
           'timestamp': FieldValue.serverTimestamp(),
@@ -389,11 +386,7 @@ Future<Map<String, dynamic>?> getApiInfoFromCloudFunction() async {
           'transcriptions': [
             subtitle
           ], // Store subtitles as an array of objects
-        }).then((_) {
-          print('New user document created: $uid');
-        }).catchError((error) {
-          print('Error creating user document: $error');
-        });
+        }).then((_) {}).catchError((error) {});
       }
 
       setState(() {
@@ -421,11 +414,23 @@ Future<Map<String, dynamic>?> getApiInfoFromCloudFunction() async {
         subtitleController.text = subtitles;
         // Save subtitled video locally
       });
-    }).catchError((error) {
-      print('Error checking user document: $error');
-    });
+    }).catchError((error) {});
   }
   // Save converted subtitles in Firestore end //
+
+  String getSubtitleForCurrentPosition(Duration currentPosition) {
+    for (var subtitleLine in subtitleLines) {
+      double start = subtitleLine['start'] * 1000;
+      double end = subtitleLine['end'] * 1000;
+
+      if (currentPosition.inMilliseconds >= start &&
+          currentPosition.inMilliseconds <= end) {
+        return subtitleLine['text'];
+      }
+    }
+    return ''; 
+  }
+
   String formatTime(double seconds) {
     int hours = seconds ~/ 3600;
     int minutes = (seconds ~/ 60) % 60;
@@ -509,13 +514,11 @@ Future<Map<String, dynamic>?> getApiInfoFromCloudFunction() async {
 
       if (taskSnapshot.state == TaskState.success) {
         downloadUrl = await taskSnapshot.ref.getDownloadURL();
-        print(downloadUrl);
         return downloadUrl;
       } else {
         return '';
       }
     } catch (error) {
-      print('Error uploading SRT file: $error');
       return '';
     }
   }
@@ -541,7 +544,6 @@ Future<Map<String, dynamic>?> getApiInfoFromCloudFunction() async {
         return '';
       }
     } catch (error) {
-      print('Error uploading SRT file: $error');
       return '';
     }
   }
@@ -597,11 +599,7 @@ Future<Map<String, dynamic>?> getApiInfoFromCloudFunction() async {
             remainingTime = newRemainingTime;
           });
 
-          usersCollection.doc(uid).update(updateData).then((_) {
-            print('Remaining time updated for user: $uid');
-          }).catchError((error) {
-            print('Error updating user data: $error');
-          });
+          usersCollection.doc(uid).update(updateData).then((_) {}).catchError((error) {});
         }
       } else {
         // User's document doesn't exist, create a new document
@@ -611,15 +609,9 @@ Future<Map<String, dynamic>?> getApiInfoFromCloudFunction() async {
           'remainingTime': 900.0 - usedTimeInSeconds, // Initial remaining time
           'monthlyLimit': 900.0, // Initial monthly limit
           'usedTime': usedTimeInSeconds,
-        }).then((_) {
-          print('New user document created: $uid');
-        }).catchError((error) {
-          print('Error creating user document: $error');
-        });
+        }).then((_) {}).catchError((error) {});
       }
-    }).catchError((error) {
-      print('Error checking user document: $error');
-    });
+    }).catchError((error) {});
   }
 
   double checkReachLimit(double newRemainingTime, double usedTimeInSeconds) {
@@ -729,8 +721,6 @@ Future<Map<String, dynamic>?> getApiInfoFromCloudFunction() async {
           setState(() {
             downloadedVideoPaths.add(outputPath);
           });
-          print('Downloaded Path:$videoFile');
-          print('Video downloaded successfully!');
         }
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -749,6 +739,7 @@ Future<Map<String, dynamic>?> getApiInfoFromCloudFunction() async {
       );
     }
   }
+
 
   Future<void> fetchVideoInfoAndExtractAudio(String videoUrl) async {
     final youtube = YoutubeExplode();
@@ -786,7 +777,6 @@ Future<Map<String, dynamic>?> getApiInfoFromCloudFunction() async {
     ];
     // saveRemainingTime()
     final result = await flutterFFmpeg.executeWithArguments(arguments);
-    print('FFmpeg Result: $result');
     uploadAudioFileToStorage(outputPath, videoId);
     // Calculate audio duration
     File audioFile = File(outputPath);
@@ -860,12 +850,8 @@ Future<void> fetchSRTContent() async {
           srtContent = response.body;
         });
         saveSRTContentAsFile();
-      } else {
-        print('Failed to fetch SRT content: ${response.statusCode}');
-      }
-    } catch (error) {
-      print('Error fetching SRT content: $error');
-    }
+      } else {}
+    } catch (error) {}
   }
 
   Future<void> saveSRTContentAsFile() async {
@@ -875,10 +861,7 @@ Future<void> fetchSRTContent() async {
     File file = File('${appDocumentsDirectory.path}/subtitle.srt');
     await file.writeAsString(srtContent);
 
-    print('SRT content saved as a file: ${file.path}');
-  } catch (error) {
-    print('Error saving SRT content as file: $error');
-  }
+  } catch (error) {}
 }
 
 Future<String> readSRTFile() async {
@@ -888,10 +871,10 @@ Future<String> readSRTFile() async {
     String srtContent = await file.readAsString();
     return srtContent;
   } catch (error) {
-    print('Error reading SRT file: $error');
     return '';
   }
 }
+
 double convertTimeToSeconds(String time) {
   List<String> parts = time.split(':');
   int hours = int.parse(parts[0]);
@@ -932,6 +915,135 @@ List<Map<String, dynamic>> parseSRTContent(String srtContent) {
     }
     return subtitles;
   }
+
+
+Future<void> downloadVideoWithSubtitles() async {
+  final appDocumentsDir = await getExternalStorageDirectory();
+  final String downloadPath = '${appDocumentsDir?.path}/video${DateTime.now().millisecondsSinceEpoch}.mp4'; // Adjust the path
+  final String videoFilePath =videoUrl;
+  // Generate and save SRT subtitles
+  final String subtitles = generateSRT(subtitleLines);
+  final String subtitleFilePath = '${appDocumentsDir?.path}/subtitles.srt';
+  await File(subtitleFilePath).writeAsString(subtitles);
+  // File(subtitleFilePath).writeAsStringSync(subtitles);
+  final flutterFFmpeg = FlutterFFmpeg();
+  // final  int result = await flutterFFmpeg.execute ('-i $videoUrl -i $subtitleFilePath -c:v copy -c:a copy -c:s mov_text $downloadPath');
+final int result = await flutterFFmpeg.execute('-i $videoFilePath -i $subtitleFilePath -c:v copy -c:s mov_text $downloadPath');
+
+  // // Append subtitles to the downloaded video
+  if (result == 0) {
+    print('Video with subtitles downloaded successfully');
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Video Downloaded'), backgroundColor: primaryColor),);
+  } 
+  else {
+    print('Error embedding subtitles.');
+    print('FFmpeg logs:');
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Video Downloading failed'), backgroundColor: primaryColor),);
+  }
+}
+
+
+// Future<void> downloadVideoWithSubtitles() async {
+//   final appDocumentsDir = await getApplicationDocumentsDirectory();
+//   final String subtitleFilePath = '${appDocumentsDir.path}/subtitle.srt';
+//   final documentDir= await getExternalStorageDirectory();
+
+//   // Generate and save SRT subtitles
+//   final String subtitles = generateSRT(subtitleLines);
+//   File(subtitleFilePath).writeAsStringSync(subtitles);
+
+//   // Define the output video path
+//   final String outputVideoPath = '${appDocumentsDir.path}/video_with_subtitles.mp4';
+
+//   // Use flutter_ffmpeg to embed subtitles into the video
+//   final FlutterFFmpeg flutterFFmpeg = FlutterFFmpeg();
+//   final int rc = await flutterFFmpeg.execute(
+//     '-i ${videoFile.path} -i $subtitleFilePath -c:v copy -c:a copy -c:s mov_text $outputVideoPath',
+//   );
+
+//   if (rc == 0) {
+//     print('Video with subtitles embedded successfully');
+
+//     // Now you can download the video with subtitles
+//     final String downloadPath = '${documentDir!.path}/downloaded_video_with_subtitles.mp4'; // Adjust as needed
+//     final File outputVideoFile = File(outputVideoPath);
+//     outputVideoFile.copySync(downloadPath);
+
+//     print('Video with subtitles downloaded successfully');
+//   } else {
+//     print('Error embedding subtitles or saving video.');
+//   }
+// }
+
+// Future<void> saveVideoToFirestoreAndStorage(File videoFile) async {
+//   final storageRef = firebase_storage.FirebaseStorage.instance.ref();
+//   final videoRef = storageRef.child('videos/${DateTime.now().millisecondsSinceEpoch}.mp4');
+
+//   // Upload the video file to Firebase Storage
+//   await videoRef.putFile(videoFile);
+
+//   // Get the download URL for the uploaded video
+//   final videoUrl = await videoRef.getDownloadURL();
+
+//   // Save the video URL to Firestore
+//   await FirebaseFirestore.instance.collection('videos').add({
+//     'url': videoUrl,
+//     'timestamp': FieldValue.serverTimestamp(),
+//   });
+// }
+
+// late List<String> videoUrls = [];
+// Future<List<String>> fetchVideosFromFirestore() async {
+//   final snapshot = await FirebaseFirestore.instance.collection('videos').get();
+
+//   final videoUrls = snapshot.docs.map((doc) => doc['url'] as String).toList();
+//   return videoUrls;
+// }
+
+List<String> getAvailableFontStyles() {
+  return GoogleFonts.asMap().keys.toList();
+}
+
+// Save subtitle text and background //
+  void saveColorsToFirestore(Color txtcolor, Color bgcolor) {
+  CollectionReference usersCollection =
+      FirebaseFirestore.instance.collection('colors_Subtitle');
+  String uid = _auth.currentUser!.uid;
+  String? email = _auth.currentUser!.email;
+
+  String txtColorHex = '#${txtcolor.value.toRadixString(16).substring(2)}';
+  String bgColorHex = '#${bgcolor.value.toRadixString(16).substring(2)}';
+
+  usersCollection.doc(email).get().then((docSnapshot) {
+    if (docSnapshot.exists) {
+      usersCollection.doc(email).update({
+        'textColor': txtColorHex,
+        'bgColor': bgColorHex,
+        'timeStamp': FieldValue.serverTimestamp(),
+        'fontStyle':selectedFontStyle,
+      }).then((_) {
+        print('Subtitle updated for user: $uid');
+      }).catchError((error) {
+        print('Error updating user data: $error');
+      });
+    } else {
+      usersCollection.doc(email).set({
+        'timeStamp': FieldValue.serverTimestamp(),
+        'userId': uid,
+        'textColor': txtColorHex,
+        'bgColor': bgColorHex,
+        'fontStyle':selectedFontStyle,
+      }).then((_) {
+        print('New user document created: $uid');
+      }).catchError((error) {
+        print('Error creating user document: $error');
+      });
+    }
+  }).catchError((error) {
+    print('Error checking user document: $error');
+  });
+}
+// End of Save subtitle text and background //
 
   @override
   Widget build(BuildContext context) {
@@ -1070,6 +1182,9 @@ List<Map<String, dynamic>> parseSRTContent(String srtContent) {
                               height: 250,
                               margin: const EdgeInsets.only(
                                   top: 10, left: 10, right: 10),
+
+
+
                               decoration: boxDecoration2,
                               child: Stack(
                                 alignment: Alignment.center,
@@ -1078,18 +1193,159 @@ List<Map<String, dynamic>> parseSRTContent(String srtContent) {
                                     Stack(
                                       alignment: Alignment.center,
                                       children: [
-                                        AspectRatio(
-                                          aspectRatio:
-                                              controller!.value.aspectRatio,
-                                          child: GestureDetector(
-                                              onTap: () {
-                                                setState(() {
-                                                  isControlVisible =
-                                                      !isControlVisible;
-                                                });
-                                              },
-                                              child: VideoPlayer(controller!)),
+                                         AspectRatio(
+                                    aspectRatio: controller!.value.aspectRatio,
+                                    child: Stack(
+                                      children: [
+                                        GestureDetector(
+                                          onTap: () {
+                                            setState(() {
+                                              isControlVisible = !isControlVisible;
+                                            });
+                                          },
+                                          child: VideoPlayer(controller!),
                                         ),
+                                        if (!isEditing)
+                                          Positioned(
+                                          bottom: 10,
+                                          left: 10,
+                                          right: 10,
+                                          child: Container(
+                                            color: userSelectedBgColor,
+                                            padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 8.0),
+                                            child: Text(
+                                              getSubtitleForCurrentPosition(controller!.value.position),
+                                              style: TextStyle(color: userSelectedTextColor, fontSize: 14,fontFamily: selectedFontStyle),
+                                            ),
+                                          ),
+                                        ),
+                                        ],
+                                      ),
+                                    ),
+                                    Align(
+                                      alignment: Alignment.topRight,
+                                      child: PopupMenuButton<String>(
+                                      icon: const Icon(Icons.more_vert),
+                                      offset: const Offset(0, 26),
+                                      onSelected: (value) {
+                                        if (value == 'Item 1') {
+                                        } else if (value == 'Item 2') {
+                                        } else if (value == 'Item 3') {}
+                                      },
+                                      itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                                        //Change subtitle text color//
+                                        PopupMenuItem<String>(
+                                          padding: const EdgeInsets.only(left: 20,right: 8),
+                                          value: 'Item 1',
+                                          child: Row(
+                                            children: [
+                                              const Icon(Icons.abc, color: primaryColor),
+                                              const SizedBox(width: 10),
+                                              TextButton(
+                                                  onPressed: () async {
+                                                    await showDialog(
+                                                    context: context,
+                                                    builder: (BuildContext context) {
+                                                      return TextColorPickerDialog(
+                                                        pickerColor: userSelectedTextColor,
+                                                        onColorChanged: (colortxt) {
+                                                          print("Selected color: $colortxt");
+                                                          setState(() {
+                                                            userSelectedTextColor=colortxt ;
+                                                          });
+                                                        },
+                                                      );
+                                                    },
+                                                  );
+                                                  if (userSelectedTextColor != null) {
+                                                    saveColorsToFirestore(userSelectedTextColor,userSelectedBgColor);
+                                                  }
+                                                },
+                                                child: const Text('Edit Text Color',
+                                                style: TextStyle(color: primaryColor))),
+                                            ],
+                                          ),
+                                        ),
+                                        //Change subtitle background color//
+                                        PopupMenuItem<String>(
+                                          padding: const EdgeInsets.only(left: 20,right: 8),
+                                          value: 'Item 2',
+                                          child: Row(
+                                            children: [
+                                              const Icon(Icons.color_lens, color: primaryColor),
+                                              const SizedBox(width: 10),
+                                              TextButton(
+                                                  onPressed: () async{
+                                                await showDialog(
+                                                context: context,
+                                                builder: (BuildContext context) {
+                                                  return BackgroundColorPickerDialog(
+                                                    pickerColor: userSelectedBgColor,
+                                                    onColorChanged: (colorbg) {
+                                                      print("Selected color: $colorbg");
+                                                      setState(() {
+                                                        userSelectedBgColor = colorbg;
+                                                      });
+                                                    },
+                                                  );
+                                                },
+                                              );
+                                                if(userSelectedBgColor !=null) {
+                                                saveColorsToFirestore(userSelectedTextColor,userSelectedBgColor);
+                                                }
+                                                  },
+                                                child: const Text('Edit Bg Color',
+                                                style: TextStyle(color: primaryColor)))
+                                            ],
+                                          ),
+                                        ),
+                                        // Change subtitle font style //
+                                       PopupMenuItem<String>(
+                                        padding: const EdgeInsets.only(left: 20,right: 8),
+                                        value: 'Item 3',
+                                        child: Row(
+                                          children: [
+                                            const Icon(Icons.font_download_outlined, color: primaryColor),
+                                            const SizedBox(width: 10),
+                                            TextButton(
+                                              onPressed: () async {
+                                                List<String> fontStyles = getAvailableFontStyles();
+                                                await showDialog(
+                                                  context: context,
+                                                  builder: (BuildContext context) {
+                                                    return AlertDialog(
+                                                      title: const Text('Available Font Styles'),
+                                                      content: Container(
+                                                        width: double.maxFinite,
+                                                        child: ListView.builder(
+                                                          itemCount: fontStyles.length,
+                                                          itemBuilder: (context, index) {
+                                                            return ListTile(
+                                                              title: Text(fontStyles[index]),
+                                                              onTap: () {
+                                                                setState(() {
+                                                                  selectedFontStyle = fontStyles[index];
+                                                                  saveColorsToFirestore(userSelectedTextColor,userSelectedBgColor);
+                                                                });
+                                                                Navigator.pop(context);
+                                                                Navigator.pop(context);
+                                                              },
+                                                            );
+                                                          },
+                                                        ),
+                                                      ),
+                                                    );
+                                                  },
+                                                );
+                                              },
+                                              child: const Text('Edit Font Style', style: TextStyle(color: primaryColor)),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      ],
+                                    ), 
+                                    ),
                                       ],
                                     )
                                   else
@@ -1163,11 +1419,13 @@ List<Map<String, dynamic>> parseSRTContent(String srtContent) {
                                   ),
                                   if (isLocalStorageVideo)
                                     VideoDurationShowWidget(
+                                      visible: isControlVisible,
                                       text:
                                           "${_formatDuration(controller!.value.position)} / ${_formatDuration(videoDuration)}",
                                     ),
                                   if (isLocalStorageVideo)
                                     VideoAudioIconWidget(
+                                      visible: isControlVisible,
                                       isAudioMuted: isAudioMuted,
                                       onPressed: () {
                                         setState(() {
@@ -1182,6 +1440,7 @@ List<Map<String, dynamic>> parseSRTContent(String srtContent) {
                                     ),
                                   if (!isLocalStorageVideo)
                                     VideoAudioIconWidget(
+                                      visible: isControlVisible,
                                       isAudioMuted: isAudioMuted,
                                       onPressed: () {
                                         setState(() {
@@ -1195,11 +1454,14 @@ List<Map<String, dynamic>> parseSRTContent(String srtContent) {
                                       },
                                     ),
                                   if (isLocalStorageVideo)
-                                    Positioned(
-                                        bottom: 10,
-                                        left: 20,
-                                        right: 20,
-                                        child: buildIndicator()),
+                                    Visibility(
+                                      visible: isControlVisible,
+                                      child: Positioned(
+                                          bottom: 10,
+                                          left: 20,
+                                          right: 20,
+                                          child: buildIndicator()),
+                                    ),
                                 ],
                               ),
                             ),
@@ -1363,7 +1625,6 @@ List<Map<String, dynamic>> parseSRTContent(String srtContent) {
                                                       saveSubtitleToFirestore(updatedSubtitle);
                                                       setState(() {
                                                         editedSubtitle =updatedSubtitle;
-                                                        print(editedSubtitle);
                                                         isVideoPlaying=true;
                                                         controller?.play();
                                                       });
@@ -1446,6 +1707,45 @@ List<Map<String, dynamic>> parseSRTContent(String srtContent) {
                         ],
                       ),
                     ),
+                    const SizedBox(height: 10,),
+                    const Divider(color: borderColor,),
+                    if(subtitles.isNotEmpty)
+                Container(
+                  width: width,
+                  padding: const EdgeInsets.all(10),
+                  decoration: boxDecoration1,
+                   margin: const EdgeInsets.only(top: 10),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Text('Video Name:$videoName',style: const TextStyle(color: primaryColor,fontSize: 12),),
+                      // const Divider(color: borderColor,),
+                      // Text('Video Duration:$videoDuration',style: const TextStyle(color: primaryColor,fontSize: 12),),
+                      // const Divider(color: borderColor,),
+                      TextButton(
+                        onPressed: () {
+                          downloadVideoWithSubtitles();
+                        },
+                        child: const Text('Download Video with Subtitles',),
+                      ),
+                      // Expanded(
+                      //   child: ListView.builder(
+                      //     itemCount: videoUrls.length,
+                      //     itemBuilder: (context, index) {
+                      //       return ListTile(
+                      //         title: Text('Video ${index + 1}'),
+                      //         onTap: () {
+                      //           // Handle tapping on a video
+                      //           // For example, navigate to a video player screen with the selected video URL
+                      //         },
+                      //       );
+                      //     },
+                      //   ),
+                      // ),
+                    ],
+                  ),
+                ),
                 ],
               ),
             ),

@@ -74,39 +74,48 @@ class VideoPlayingIconsWidget extends StatelessWidget {
 }
 
 class VideoDurationShowWidget extends StatelessWidget {
-  const VideoDurationShowWidget({super.key, required this.text});
+  const VideoDurationShowWidget({super.key, required this.text,required this.visible});
 
   final String text;
+  final bool visible;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 20, left: 15),
-      child: Align(
-          alignment: Alignment.bottomLeft,
-          child: Text(text,
-              style: const TextStyle(color: Colors.white, fontSize: 13))),
+    return Visibility(
+      visible: visible,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 20, left: 15),
+        child: Align(
+            alignment: Alignment.bottomLeft,
+            child: Text(text,
+                style: const TextStyle(color: Colors.white, fontSize: 13))),
+      ),
     );
   }
 }
 
 class VideoAudioIconWidget extends StatelessWidget {
   const VideoAudioIconWidget(
-      {super.key, required this.isAudioMuted, required this.onPressed});
+      {super.key, required this.isAudioMuted, required this.onPressed,required this.visible});
 
   final bool isAudioMuted;
   final void Function()? onPressed;
+  final bool visible;
+
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10, left: 15),
-      child: Align(
-        alignment: Alignment.bottomRight,
-        child: IconButton(
-          icon: Icon(isAudioMuted ? Icons.volume_off : Icons.volume_up,
-              color: Colors.white),
-          onPressed: onPressed,
+    return Visibility(
+      visible: visible,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10, left: 15),
+        child: Align(
+          alignment: Alignment.bottomRight,
+          child: IconButton(
+            icon: Icon(isAudioMuted ? Icons.volume_off : Icons.volume_up,
+                color: Colors.white),
+            onPressed: onPressed,
+          ),
         ),
       ),
     );
