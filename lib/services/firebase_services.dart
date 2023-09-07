@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:video_subtitle_translator/colors.dart';
+import 'package:video_subtitle_translator/constants.dart';
 import 'package:video_subtitle_translator/home.dart';
 import 'package:video_subtitle_translator/login.dart';
 import 'package:video_subtitle_translator/otp_screen.dart';
@@ -38,7 +40,7 @@ class AuthService {
   }
 
   // Sign in with Google
-  Future<User?> signInWithGoogle(String phoneNumber) async {
+  Future<User?> signInWithGoogle() async {
     try {
       // Trigger the Google Sign In process
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
@@ -65,6 +67,7 @@ class AuthService {
         await _prefs?.setString('email', user.email ?? '');
         await _prefs?.setString('uid', user.uid);
         await _prefs?.setBool('isGoogleLogin', true);
+        await _prefs?.setString('photoURL', user.photoURL ?? '');
       }
       print(user?.displayName);
       print(user?.email);
@@ -123,6 +126,10 @@ class AuthService {
     return _prefs?.getBool('isGoogleLogin');
   }
 
+  Future<String?> getPhoto() async {
+    return _prefs?.getString('photoURL');
+  }
+
   // Future<String> getUpdatePhoneNo() async {
   //   try {
   //     String uid = _auth.currentUser!.uid;
@@ -157,7 +164,7 @@ class AuthService {
         },
         verificationFailed: (FirebaseAuthException e) {
           if (e.code == 'invalid-phone-number') {
-            Get.snackbar('Error', 'The provided phone numbet is not valid');
+            Get.snackbar('Error', 'The provided phone number is not valid');
           } else {
             Get.snackbar('Error', 'Something went wrong. Try again');
             Get.to(const Login());
@@ -177,7 +184,7 @@ class AuthService {
     }
   }
 
-  Future<void> submitOTP(String otp, String verificationId) async {
+  Future<bool> submitOTP(String otp, String verificationId) async {
     try {
       if (verificationId == null) {
         throw Exception("Verification ID is null");
@@ -199,9 +206,12 @@ class AuthService {
           throw Exception("Failed to sign in with OTP");
         }
       }
+      return true;
     } catch (error) {
       print("Error submitting OTP: $error");
+      Get.snackbar(codeIncorrectMsg, tryAgainMsg,backgroundColor: redColor.withOpacity(0.2),snackPosition: SnackPosition.TOP,titleText: const Text(codeIncorrectMsg, style: TextStyle(color: redColor)));
       Get.to(const Login());
+      return false;
     }
   }
 

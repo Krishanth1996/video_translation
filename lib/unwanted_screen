@@ -80,3 +80,44 @@
                                   //     },
                                   //   ),
                                   // ),
+
+                                  // double convertTimeToSeconds(String time) {
+//   List<String> parts = time.split(':');
+//   int hours = int.parse(parts[0]);
+//   int minutes = int.parse(parts[1]);
+//   double seconds = double.parse(parts[2].replaceFirst(',', '.'));
+
+//   return hours * 3600 + minutes * 60 + seconds;
+// }
+
+// List<Map<String, dynamic>> parseSRTContent(String srtContent) {
+//     List<Map<String, dynamic>> subtitles = [];
+//     List<String> lines = srtContent.split('\n\n');
+
+//     for (String line in lines) {
+//       List<String> linesInBlock = line.split('\n');
+//       if (linesInBlock.length >= 3) {
+//         String index = linesInBlock[0];
+//         String timing = linesInBlock[1];
+//         String text = linesInBlock.sublist(2).join('\n'); // Join remaining lines as text
+
+//         // Parse timing to get start and end times
+//         List<String> times = timing.split(' --> ');
+//         if (times.length == 2) {
+//           String startTime = times[0];
+//           String endTime = times[1];
+
+//           // Convert start and end times to double values (in seconds)
+//           double startInSeconds = convertTimeToSeconds(startTime);
+//           double endInSeconds = convertTimeToSeconds(endTime);
+
+//           subtitles.add({
+//             'text': text,
+//             'start': startInSeconds,
+//             'end': endInSeconds,
+//           });
+//         }
+//       }
+//     }
+//     return subtitles;
+//   }  

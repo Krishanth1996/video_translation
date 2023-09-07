@@ -54,6 +54,23 @@
         }
       });
     });
+    import { initializeApp } from "firebase/app";
+    import { initializeApp } from "firebase/firestore";
+    import { initializeApp } from "firebase/auth";
+    import { getAnalytics } from "firebase/analytics";
+    const firebaseConfig = {
+      apiKey: "AIzaSyA5tsdDFCHc1EjvTX8uIft5faIpiO9r7y4",
+      authDomain: "videotranslate-36e2f.firebaseapp.com",
+      projectId: "videotranslate-36e2f",
+      storageBucket: "videotranslate-36e2f.appspot.com",
+      messagingSenderId: "560091573927",
+      appId: "1:560091573927:web:c0d5544655813ea0b03582",
+      measurementId: "G-FDXM9NFMPG"
+    };
+
+    // Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+    const analytics = getAnalytics(app);
   </script>
 </body>
 </html>

@@ -56,6 +56,7 @@ class _HomeState extends State<Home> {
   String downloadUrl='';
   String fileName = '';
   String? selectedFontStyle;
+  String? photo='';
 
   User? user;
 
@@ -89,6 +90,9 @@ class _HomeState extends State<Home> {
   bool isGoogleLogin = false;
   bool isEditing = false;
   bool isSelectStyle= false;
+  bool isDownloadingVideo =false;
+  bool isDownloadingSrt =false;
+  bool isGettingKey=false;
 
   List<String> extractedAudioPaths = [];
   List<String> downloadedVideoPaths = [];
@@ -134,6 +138,7 @@ class _HomeState extends State<Home> {
       email = await authService.getEmail();
       uid = await authService.getUid();
       phoneNumber = await authService.getPhoneNo();
+      photo=await authService.getPhoto();
     });
   }
   //Loading user details end//
@@ -189,19 +194,19 @@ class _HomeState extends State<Home> {
   Future<void> getVideo() async {
     final picker = ImagePicker();
     final pickedFile = await picker.pickVideo(source: ImageSource.gallery);
+   
     if (pickedFile != null) {
       final videoPlayerController =VideoPlayerController.file(File(pickedFile.path));
       videoName = pickedFile.name;
       videoFile = File(pickedFile.path);
       videoUrl=pickedFile.path;
+
       // Initialize the video player controller
       await videoPlayerController.initialize();
       await videoPlayerController.play();
 
       // Set the video duration
       setState(() {
-        // selectedVideoFile = File(pickedFile.path);
-        // final videoPlayerController = VideoPlayerController.file(selectedVideoFile!);
         videoDuration = videoPlayerController.value.duration;
       });
 
@@ -218,11 +223,10 @@ class _HomeState extends State<Home> {
           isLoadingVideo = false;
           showLoadingPopup = false;
         });
-        // showLoadingPopup = false;
+
         // ignore: use_build_context_synchronously
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text(select60MVideMsg), backgroundColor: primaryColor),
+          const SnackBar(content: Text(select60MVideMsg), backgroundColor: primaryColor),
         );
         // Dispose the video player controller
         videoPlayerController.dispose();
@@ -248,78 +252,76 @@ class _HomeState extends State<Home> {
         showLoadingPopup = false;
       });
     }
+    else{
+      setState(() {
+        isLoadingVideo = false;
+        showLoadingPopup=false;
+      });
+    }
   }
   //Get video from phone storage End//
 
-  // Extract audio from imported video Start//
+  // Extract audio from imported phone storage video//
   Future<void> extractAudioFromVideo() async {
     Directory? appDir = await getExternalStorageDirectory();
     final String outputPath ='${appDir?.path}/audio${DateTime.now().millisecondsSinceEpoch}.m4a';
     String videoId = generateVideoId();
     var result = await flutterFFmpeg.execute('-i ${videoFile.path} -vn -c:a aac $outputPath');
-    // Audio extraction successful
+    // Audio extraction successful//
     if (result == 0) {
       setState(() {
         extractedAudioPaths.add(outputPath);
         showLoadingPopup = false;
       });
+
+      //Upload extracted audio to firebase storage//
       uploadAudioFileToStorage(outputPath, videoId);
+
       // Calculate audio duration
       File audioFile = File(outputPath);
       int fileSizeInBytes = await audioFile.length();
       double bitRate = 128000;
       durationInSeconds = fileSizeInBytes * 8 / bitRate;
+      
+      // ignore: use_build_context_synchronously
       showSubtitleSelectionSheet(context);
     } 
+    // Audio extraction fail//
     else if (result == 1) {
-      final youtube = YoutubeExplode();
-      var manifest = await youtube.videos.streamsClient.getManifest(videoId);
-      var streams = manifest.audioOnly;
-
-      // Get the audio track with the highest bitrate.
-      var audio = streams.first;
-
-      // Get the audio stream URL
-      Uri audioStreamUrl = audio.url;
-      final arguments = [
-        '-i', audioStreamUrl,
-        '-vn', // Disable video
-        '-c:a', 'aac', // Use the AAC codec
-        outputPath,
-      ];
-      // saveRemainingTime()
-      final result = await flutterFFmpeg.executeWithArguments(arguments);
-    } else {
-      //Audio extraction failed
-      Get.snackbar(sorryMsg, audioExtractFailMsg,
-          snackPosition: SnackPosition.BOTTOM,
-          titleText: const Text(sorryMsg, style: TextStyle(color: redColor)));
+      Get.snackbar(sorryMsg, notAbleCreateSubtitleMsg,backgroundColor: redColor.withOpacity(0.2),snackPosition: SnackPosition.BOTTOM,titleText: const Text(sorryMsg, style: TextStyle(color: redColor)));
       setState(() {
         showLoadingPopup = false;
       });
-    }
+    } 
   }
   // Extract audio from imported video End//
 
+  //Get api key and api url from database through cloud function//
   Future<Map<String, dynamic>?> getApiInfoFromCloudFunction() async {
-  final HttpsCallable callable = FirebaseFunctions.instance.httpsCallable('getApiInfo');
-  try {
-    final response = await callable.call();
-    final responseData = Map<String, dynamic>.from(response.data);
-    return responseData;
-  } on FirebaseFunctionsException catch (e) {
-    return null;
+    final HttpsCallable callable = FirebaseFunctions.instance.httpsCallable('getApiInfo');
+    setState(() {
+      isGettingKey=true;
+    });
+    try {
+      final response = await callable.call();
+      final responseData = Map<String, dynamic>.from(response.data);
+      setState(() {
+        isGettingKey=false;
+      });
+      return responseData;
+    } on FirebaseFunctionsException catch (e) {
+      return null;
+    }
   }
-}
+  //Get api key and api url from database through cloud function end//
 
-
-  // Api call for convert text from extracted audio start //
+  // Api call for convert text from extracted audio//
   Future<void> convertAudioToText(String value) async {
-  final apiInfo = await getApiInfoFromCloudFunction();
+    final apiInfo = await getApiInfoFromCloudFunction();
 
     if (apiInfo == null) {
-    return;
-  }
+      return;
+    }
 
     String apiUrl = apiInfo['apiUrl'];
     String apiKey = apiInfo['apiKey'];
@@ -350,18 +352,15 @@ class _HomeState extends State<Home> {
 
       // Save the subtitle to Firestore
       saveSubtitleToFirestore(responseBody);
-      // saveVideoToFirestoreAndStorage(videoUrl);
 
       // ignore: use_build_context_synchronously
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(subtitleCreateSuccessMsg,
-              style: TextStyle(color: whiteColor)),
+          content: Text(subtitleCreateSuccessMsg,style: TextStyle(color: whiteColor)),
           backgroundColor: greenColor,
         ),
       );
     } else {
-
       // ignore: use_build_context_synchronously
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -373,12 +372,10 @@ class _HomeState extends State<Home> {
   }
   // Api call for convert text from extracted audio End//
 
-  // Save converted subtitles in Firestore start //
+  // Save converted subtitles in Firestore//
   void saveSubtitleToFirestore(String subtitle) {
-    CollectionReference usersCollection =
-        FirebaseFirestore.instance.collection('Subtitle_user');
+    CollectionReference usersCollection =FirebaseFirestore.instance.collection('Subtitle_user');
     String uid = _auth.currentUser!.uid;
-    String? email = _auth.currentUser!.email;
 
     usersCollection.doc(uid).get().then((docSnapshot) {
       if (docSnapshot.exists) {
@@ -400,6 +397,7 @@ class _HomeState extends State<Home> {
       setState(() {
         subtitleLines.clear(); // Clear the existing subtitle data
 
+        //Get subtitles line by line according to time interval//
         var jsonResponse = json.decode(subtitle);
         var segments = jsonResponse['segments'];
 
@@ -415,17 +413,15 @@ class _HomeState extends State<Home> {
           });
         }
 
-        subtitles = subtitleLines
-            .map((line) => '${line['text']}  ${line['start']} - ${line['end']}')
-            .join('\n\n');
+        subtitles = subtitleLines.map((line) => '${line['text']}  ${line['start']} - ${line['end']}').join('\n\n');
         isTranscribing = false;
         subtitleController.text = subtitles;
-        // Save subtitled video locally
       });
     }).catchError((error) {});
   }
   // Save converted subtitles in Firestore end //
 
+  //Get subtitle for current position//
   String getSubtitleForCurrentPosition(Duration currentPosition) {
     for (var subtitleLine in subtitleLines) {
       double start = subtitleLine['start'] * 1000;
@@ -438,7 +434,9 @@ class _HomeState extends State<Home> {
     }
     return ''; 
   }
+  //Get subtitle for current position end //
 
+  // Format time to srt file generation//
   String formatTime(double seconds) {
     int hours = seconds ~/ 3600;
     int minutes = (seconds ~/ 60) % 60;
@@ -447,11 +445,10 @@ class _HomeState extends State<Home> {
 
     return '$hours:${minutes.toString().padLeft(2, '0')}:${remainingSeconds.toString().padLeft(2, '0')},${milliseconds.toString().padLeft(3, '0')}';
   }
-  //Generate SRT File Start//
-  
-  String generateSRT(List<Map<String, dynamic>> subtitleLines, 
-  // Color textColor, Color bgColor, String font
-  ) {
+  // Format time to srt file generation end//
+
+  //Generate SRT file start//
+  String generateSRT(List<Map<String, dynamic>> subtitleLines) {
     StringBuffer srtContent = StringBuffer();
     
     for (int i = 0; i < subtitleLines.length; i++) {
@@ -463,35 +460,24 @@ class _HomeState extends State<Home> {
       String startTime = formatTime(startInSeconds);
       String endTime = formatTime(endInSeconds);
 
-  // Create formatted HTML-like subtitle text
-    // String formattedText = '<font color="${_getColorHexCode(textColor)}" bgcolor="${_getColorHexCode(bgColor)}" face="$font">$text</font>';
+      // Create formatted HTML-like subtitle text
       srtContent.writeln('${i + 1}');
       srtContent.writeln('$startTime --> $endTime');
       srtContent.writeln(text);
-      // srtContent.writeln(formattedText);
       srtContent.writeln();
     }
     
     return srtContent.toString();
   }
   //Generate SRT File End//
-String _getColorHexCode(Color color) {
-  return '#${color.value.toRadixString(16).padLeft(8, '0')}';
-}
 
-  //Save SRT File Start//
-  void saveSRTToFile(String srtContent) {
-    File file = File('subtitle.srt');
-    file.writeAsStringSync(srtContent);
-  }
-  //Save SRT File End//
-
-//Download SRT File Start//
+  //Download SRT file//
   Future<void> downloadSRTFile() async {
     String srtContent = generateSRT((subtitleLines));
-    // generateSRT(subtitleLines, userSelectedTextColor, userSelectedBgColor, selectedFontStyle!);
     String videoId = generateVideoId();
-
+    setState(() {
+       isDownloadingSrt=true;
+     });
     Directory? appDocumentsDirectory = await getExternalStorageDirectory();
     String filePath = '${appDocumentsDirectory?.path}/subtitles.srt';
 
@@ -500,22 +486,28 @@ String _getColorHexCode(Color color) {
     String downloadUrl = await uploadSRTFileToStorage(filePath, videoId);
 
     if (downloadUrl.isNotEmpty) {
+       await Future.delayed(const Duration(seconds: 3));
+      setState(() {
+        isDownloadingSrt = false;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(srtFileCreateSuccessMsg),
-          backgroundColor: Colors.green,
+          backgroundColor: greenColor,
         ),
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(srtFileCreateFailMsg),
-          backgroundColor: Colors.red,
+          backgroundColor: redColor,
         ),
       );
     }
   }
+  //Download SRT file end//
 
+  //Upload SRT file to firebase storage//
   Future<String> uploadSRTFileToStorage(String filePath, String videoId) async {
     try {
       Reference storageReference = FirebaseStorage.instance
@@ -525,8 +517,7 @@ String _getColorHexCode(Color color) {
           .child('subtitle.srt');
 
       final metadata = SettableMetadata(contentType: 'text/srt');
-      UploadTask uploadTask =
-          storageReference.putFile(File(filePath), metadata);
+      UploadTask uploadTask =storageReference.putFile(File(filePath), metadata);
       TaskSnapshot taskSnapshot = await uploadTask;
 
       if (taskSnapshot.state == TaskState.success) {
@@ -539,9 +530,10 @@ String _getColorHexCode(Color color) {
       return '';
     }
   }
+  //Upload SRT file to firebase storage end//
 
-  Future<String> uploadAudioFileToStorage(
-      String filePath, String videoId) async {
+  //Upload audio file to firebase storage//
+  Future<String> uploadAudioFileToStorage(String filePath, String videoId) async {
     try {
       Reference storageReference = FirebaseStorage.instance
           .ref()
@@ -564,17 +556,16 @@ String _getColorHexCode(Color color) {
       return '';
     }
   }
+  //Upload audio file to firebase storage end//
 
   // Save user's remaining time and monthly limit to Firebase Firestore//
   void saveRemainingTime(double usedTimeInSeconds, String? uid) {
-    CollectionReference usersCollection =
-        FirebaseFirestore.instance.collection('Remaining_Time');
+    CollectionReference usersCollection =FirebaseFirestore.instance.collection('Remaining_Time');
     email = _auth.currentUser!.email;
     String uid = _auth.currentUser!.uid;
 
     DateTime now = DateTime.now();
-    DateTime nextMonth =
-        DateTime(now.year, now.month + 1, 1); // Start of the next month
+    DateTime nextMonth =DateTime(now.year, now.month + 1, 1); // Start of the next month
 
     usersCollection.doc(uid).get().then((docSnapshot) async {
       if (docSnapshot.exists) {
@@ -587,8 +578,7 @@ String _getColorHexCode(Color color) {
           if (now.isAfter(nextMonth)) {
             // Reset for a new month
             currentMonthlyLimit = 900.0; // Set the monthly limit to 900 seconds
-            currentRemainingTime =
-                900.0; // Reset remaining time to the new limit
+            currentRemainingTime =900.0; // Reset remaining time to the new limit
           }
 
           double newRemainingTime = currentRemainingTime - usedTimeInSeconds;
@@ -630,11 +620,11 @@ String _getColorHexCode(Color color) {
       }
     }).catchError((error) {});
   }
+  // Save user's remaining time and monthly limit to Firebase Firestore end//
 
+  //Check time reach limit for user//
   double checkReachLimit(double newRemainingTime, double usedTimeInSeconds) {
-    if (newRemainingTime < 0 ||
-        usedTimeInSeconds >= 900 ||
-        usedTimeInSeconds > newRemainingTime) {
+    if (newRemainingTime < 0 ||usedTimeInSeconds >= 900 ||usedTimeInSeconds > newRemainingTime) {
       setState(() {
         isReachedLimit = true;
       });
@@ -644,12 +634,15 @@ String _getColorHexCode(Color color) {
     }
     return newRemainingTime;
   }
+  //Check time reach limit for user end//
 
-  // Save user's remaining time and monthly limit to Firebase Firestore end//
+  //Avoid getback after login once//
   Future<bool> _onWillPop() async {
     return false;
   }
+  //Avoid getback after login once end//
 
+  //Delete video when click discard//
   void deleteVideo() {
     setState(() {
       isVideoExist = false;
@@ -668,7 +661,9 @@ String _getColorHexCode(Color color) {
       subtitles = '';
     });
   }
+  //Delete video when click discard end//
 
+  //Get youtube video by url//
   Future<void> getYoutubeVideo() async {
     final videoUrl = urlController.text.trim();
 
@@ -699,40 +694,44 @@ String _getColorHexCode(Color color) {
           }
           else{
             urlController!.clear();
-             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-              content: Text(select60MVideMsg), backgroundColor: primaryColor),
-        );
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text(select60MVideMsg), backgroundColor: primaryColor),
+            );
           }
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Invalid YouTube URL'),
-              backgroundColor: primaryColor,
+              content: Text(invalidUrlMsg,style: TextStyle(color: whiteColor)),
+              backgroundColor: redColor,
             ),
           );
+          urlController.clear();
         }
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('An error occurred: $e'),
-            backgroundColor: primaryColor,
+            content: Text('An error occurred: $e',style: const TextStyle(color: whiteColor),),
+            backgroundColor: redColor,
           ),
         );
       }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('Please enter a valid YouTube URL'),
+            content: Text(enterUrlMsg),
             backgroundColor: primaryColor),
       );
     }
   }
+  //Get youtube video by url end//
 
+  //Dispose youtube controller//
   void disposeController() {
     youtubeController?.dispose();
   }
+  //Dispose youtube controller end//
 
+  //Set youtube video controller//
   void setVideoController() {
     disposeController();
     youtubeController = YoutubePlayerController(
@@ -740,7 +739,9 @@ String _getColorHexCode(Color color) {
       flags: const YoutubePlayerFlags(autoPlay: false),
     );
   }
+  //Set youtube video controller end//
 
+  //Download youtube video//
   Future<void> downloadYoutubeVideo() async {
     final videoUrl = urlController.text.trim();
     if (videoUrl.isNotEmpty) {
@@ -748,9 +749,7 @@ String _getColorHexCode(Color color) {
         final response = await http.get(Uri.parse(videoUrl));
         if (response.statusCode == 200) {
           final appDocumentsDir = await getExternalStorageDirectory();
-          // final appDocumentsDir = await getApplicationDocumentsDirectory();
 
-          // String outputPath ='${appDocumentsDir?.path}/video${DateTime.now().millisecondsSinceEpoch}.mp4';
           String outputPath ='${appDocumentsDir?.path}/video$videoId.mp4';
 
           final videoFile = File('${appDocumentsDir?.path}/video.mp4');
@@ -771,14 +770,15 @@ String _getColorHexCode(Color color) {
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please enter a valid video URL'),
-          backgroundColor: Color.fromARGB(255, 202, 81, 127),
+          content: Text(enterUrlMsg),
+          backgroundColor: primaryColor,
         ),
       );
     }
   }
+  //Download youtube video end//
 
-
+  //fetch youtube video infomation//
   Future<void> fetchVideoInfoAndExtractAudio(String videoUrl) async {
     final youtube = YoutubeExplode();
 
@@ -797,13 +797,14 @@ String _getColorHexCode(Color color) {
     // Call the function to start audio extraction
     await extractAudioFromUrl(audioStreamUrl.toString());
   }
+  //fetch youtube video infomation end//
 
+  //Extract audio of youtube video//
   Future<void> extractAudioFromUrl(String audioStreamUrl) async {
     final flutterFFmpeg = FlutterFFmpeg();
     String videoFilePath = downloadedVideoPaths.last;
     String directoryPath = videoFilePath.replaceAll(RegExp(r'/[^/]*$'), '');
-    final outputPath =
-        '$directoryPath/audio${DateTime.now().millisecondsSinceEpoch}.m4a';
+    final outputPath ='$directoryPath/audio${DateTime.now().millisecondsSinceEpoch}.m4a';
     setState(() {
       extractedAudioPaths.add(outputPath);
     });
@@ -823,246 +824,214 @@ String _getColorHexCode(Color color) {
     durationInSeconds = fileSizeInBytes * 8 / bitRate;
     showSubtitleSelectionSheet(context);
   }
+  //Extract audio of youtube video end//
 
-Future<List<Map<String, dynamic>>> retrieveSubtitlesFromFirestore() async {
-  CollectionReference subtitlesCollection = FirebaseFirestore.instance.collection('Subtitle_user');
-  String uid = _auth.currentUser!.uid;
+  //Retrieve subtitle from database//
+  Future<List<Map<String, dynamic>>> retrieveSubtitlesFromFirestore() async {
+    CollectionReference subtitlesCollection = FirebaseFirestore.instance.collection('Subtitle_user');
+    String uid = _auth.currentUser!.uid;
 
-  DocumentSnapshot userDoc = await subtitlesCollection.doc(uid).get();
-  if (userDoc.exists) {
-    Map<String, dynamic>? userData = userDoc.data() as Map<String, dynamic>?;
+    DocumentSnapshot userDoc = await subtitlesCollection.doc(uid).get();
+    if (userDoc.exists) {
+      Map<String, dynamic>? userData = userDoc.data() as Map<String, dynamic>?;
 
-    if (userData != null) {
-      List<dynamic>? subtitlesData = userData['transcriptions'];
+      if (userData != null) {
+        List<dynamic>? subtitlesData = userData['transcriptions'];
 
-      if (subtitlesData != null) {
-        List<Map<String, dynamic>> subtitles = [];
-        for (var subtitle in subtitlesData) {
-          var jsonResponse = json.decode(subtitle);
-          var segments = jsonResponse['segments'];
+        if (subtitlesData != null) {
+          List<Map<String, dynamic>> subtitles = [];
+          for (var subtitle in subtitlesData) {
+            var jsonResponse = json.decode(subtitle);
+            var segments = jsonResponse['segments'];
 
-          for (var segment in segments) {
-            String text = segment['text'];
-            double start = segment['start'];
-            double end = segment['end'];
+            for (var segment in segments) {
+              String text = segment['text'];
+              double start = segment['start'];
+              double end = segment['end'];
 
-            subtitles.add({
-              'text': text,
-              'start': start,
-              'end': end,
-            });
+              subtitles.add({
+                'text': text,
+                'start': start,
+                'end': end,
+              });
+            }
           }
-        }
 
-        return subtitles;
+          return subtitles;
+        } else {
+          return []; // No subtitles found for the user
+        }
       } else {
         return []; // No subtitles found for the user
       }
     } else {
       return []; // No subtitles found for the user
     }
-  } else {
-    return []; // No subtitles found for the user
   }
-}
+  //Retrieve subtitle from database end//
 
-void updateSubtitleIndex(currentPosition) {
-  setState(() {
-    for (int i = 0; i < subtitleLines.length; i++) {
-      double start = subtitleLines[i]['start'] * 1000;
-      double end = subtitleLines[i]['end'] * 1000;
+  //Update subtitles after edit//
+  void updateSubtitleIndex(currentPosition) {
+    setState(() {
+      for (int i = 0; i < subtitleLines.length; i++) {
+        double start = subtitleLines[i]['start'] * 1000;
+        double end = subtitleLines[i]['end'] * 1000;
 
-      if (currentPosition.inMilliseconds >= start && currentPosition.inMilliseconds <= end) {
-        currentSubtitleIndex = i;
-        break;
-      }
-    }
-  });
-}
-
-Future<void> fetchSRTContent() async {
-    try {
-      final response = await http.get(Uri.parse(downloadUrl));
-      if (response.statusCode == 200) {
-        setState(() {
-          srtContent = response.body;
-        });
-        saveSRTContentAsFile();
-      } else {}
-    } catch (error) {}
-  }
-
-  Future<void> saveSRTContentAsFile() async {
-  try {
-    fileName= '${videoId}subtitle.srt';
-    Directory appDocumentsDirectory = await getApplicationDocumentsDirectory();
-    File file = File('${appDocumentsDirectory.path}/subtitle.srt');
-    await file.writeAsString(srtContent);
-
-  } catch (error) {}
-}
-
-Future<String> readSRTFile() async {
-  try {
-    Directory appDocumentsDirectory = await getApplicationDocumentsDirectory();
-    File file = File('${appDocumentsDirectory.path}/subtitle.srt');
-    String srtContent = await file.readAsString();
-    return srtContent;
-  } catch (error) {
-    return '';
-  }
-}
-
-double convertTimeToSeconds(String time) {
-  List<String> parts = time.split(':');
-  int hours = int.parse(parts[0]);
-  int minutes = int.parse(parts[1]);
-  double seconds = double.parse(parts[2].replaceFirst(',', '.'));
-
-  return hours * 3600 + minutes * 60 + seconds;
-}
-
-List<Map<String, dynamic>> parseSRTContent(String srtContent) {
-    List<Map<String, dynamic>> subtitles = [];
-    List<String> lines = srtContent.split('\n\n');
-
-    for (String line in lines) {
-      List<String> linesInBlock = line.split('\n');
-      if (linesInBlock.length >= 3) {
-        String index = linesInBlock[0];
-        String timing = linesInBlock[1];
-        String text = linesInBlock.sublist(2).join('\n'); // Join remaining lines as text
-
-        // Parse timing to get start and end times
-        List<String> times = timing.split(' --> ');
-        if (times.length == 2) {
-          String startTime = times[0];
-          String endTime = times[1];
-
-          // Convert start and end times to double values (in seconds)
-          double startInSeconds = convertTimeToSeconds(startTime);
-          double endInSeconds = convertTimeToSeconds(endTime);
-
-          subtitles.add({
-            'text': text,
-            'start': startInSeconds,
-            'end': endInSeconds,
-          });
+        if (currentPosition.inMilliseconds >= start && currentPosition.inMilliseconds <= end) {
+          currentSubtitleIndex = i;
+          break;
         }
       }
-    }
-    return subtitles;
+    });
   }
+  //Update subtitles after edit end//
 
-
-Future<void> downloadVideoWithSubtitles() async {
-  final appDocumentsDir = await getExternalStorageDirectory();
-
-  final String downloadPath = '${appDocumentsDir?.path}/video${DateTime.now().millisecondsSinceEpoch}.mkv'; // Adjust the path
-  String videoFilePath='';
-  if(isLocalStorageVideo) {
-     videoFilePath =videoUrl;
-  
-  // Generate and save SRT subtitles
-  final String subtitles = generateSRT(subtitleLines);
-  // generateSRT(subtitleLines, userSelectedTextColor, userSelectedBgColor, selectedFontStyle!);
-  final String subtitleFilePath = '${appDocumentsDir?.path}/subtitles.srt';
-  await File(subtitleFilePath).writeAsString(subtitles);
-  final flutterFFmpeg = FlutterFFmpeg();
-  final int result = await flutterFFmpeg.execute('-i $videoFilePath -i $subtitleFilePath $downloadPath');
-
-  // // Append subtitles to the downloaded video
-  if (result == 0) {
-    print('Video with subtitles downloaded successfully');
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Video Downloaded'), backgroundColor: primaryColor),);
-  } 
-  else {
-    print('Error embedding subtitles.');
-    print('FFmpeg logs:');
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Video Downloading failed'), backgroundColor: primaryColor),);
-  }
-  }
-
-  else{
-    final youtube = YoutubeExplode();
-    final videoId = YoutubePlayer.convertUrlToId(videoUrl);
-    var manifest = await youtube.videos.streamsClient.getManifest(videoId);
-    var streamsAudio=manifest.audioOnly;
-    var audio=streamsAudio.first;
-    Uri audioStreamUrl = audio.url;
-
-    var streams= manifest.videoOnly;
-    var video = streams.first;
-    Uri videoStreamUrl = video.url;
-
+  //Download video with subtitles embedded//
+  Future<void> downloadVideoWithSubtitles(BuildContext context) async {
     final appDocumentsDir = await getExternalStorageDirectory();
-    videoFilePath='${appDocumentsDir?.path}/video$videoId.mp4';
 
+    final String downloadPath = '${appDocumentsDir?.path}/video${DateTime.now().millisecondsSinceEpoch}.mkv'; // Adjust the path
+    String videoFilePath='';
+    
+    if(isLocalStorageVideo) {
+     setState(() {
+       isDownloadingVideo=true;
+     });
+      videoFilePath =videoUrl;
+    
     // Generate and save SRT subtitles
-  final String subtitles = generateSRT(subtitleLines);
-  // generateSRT(subtitleLines, userSelectedTextColor, userSelectedBgColor, selectedFontStyle!);
-  final String subtitleFilePath = '${appDocumentsDir?.path}/subtitles.srt';
-  await File(subtitleFilePath).writeAsString(subtitles);
-  final flutterFFmpeg = FlutterFFmpeg();
- final int result = await flutterFFmpeg.execute('-i $videoStreamUrl -i $audioStreamUrl -i $subtitleFilePath -c:a copy -c:v copy $downloadPath');
-  // // Append subtitles to the downloaded video
-  if (result == 0) {
-    print('Video with subtitles downloaded successfully');
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Video Downloaded'), backgroundColor: primaryColor),);
-  } 
-  else {
-    print('Error embedding subtitles.');
-    print('FFmpeg logs:');
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Video Downloading failed'), backgroundColor: primaryColor),);
-  }
-  }
-}
-
-List<String> getAvailableFontStyles() {
-  return GoogleFonts.asMap().keys.toList();
-}
-
-// Save subtitle text and background //
-  void saveColorsToFirestore(Color txtcolor, Color bgcolor) {
-  CollectionReference usersCollection =
-      FirebaseFirestore.instance.collection('colors_Subtitle');
-  String uid = _auth.currentUser!.uid;
-  String? email = _auth.currentUser!.email;
-
-  String txtColorHex = '#${txtcolor.value.toRadixString(16).substring(2)}';
-  String bgColorHex = '#${bgcolor.value.toRadixString(16).substring(2)}';
-
-  usersCollection.doc(email).get().then((docSnapshot) {
-    if (docSnapshot.exists) {
-      usersCollection.doc(email).update({
-        'textColor': txtColorHex,
-        'bgColor': bgColorHex,
-        'timeStamp': FieldValue.serverTimestamp(),
-        'fontStyle':selectedFontStyle,
-      }).then((_) {
-        print('Subtitle updated for user: $uid');
-      }).catchError((error) {
-        print('Error updating user data: $error');
+    final String subtitles = generateSRT(subtitleLines);
+    final String subtitleFilePath = '${appDocumentsDir?.path}/subtitles.srt';
+    await File(subtitleFilePath).writeAsString(subtitles);
+    final flutterFFmpeg = FlutterFFmpeg();
+    final int result = await flutterFFmpeg.execute('-i $videoFilePath -i $subtitleFilePath $downloadPath');
+     String videoId = generateVideoId();
+    // // Append subtitles to the downloaded video
+    if (result == 0) {
+      await Future.delayed(const Duration(seconds: 3));
+      setState(() {
+        isDownloadingVideo = false;
       });
-    } else {
-      usersCollection.doc(email).set({
-        'timeStamp': FieldValue.serverTimestamp(),
-        'userId': uid,
-        'textColor': txtColorHex,
-        'bgColor': bgColorHex,
-        'fontStyle':selectedFontStyle,
-      }).then((_) {
-        print('New user document created: $uid');
-      }).catchError((error) {
-        print('Error creating user document: $error');
-      });
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(videoDownloadMsg), backgroundColor: greenColor),);
+      uploadVideoToStorage(downloadPath,videoId);
+    } 
+    else {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(videoDownloadFailMsg), backgroundColor: redColor),);
     }
-  }).catchError((error) {
-    print('Error checking user document: $error');
-  });
-}
-// End of Save subtitle text and background //
+    }
 
+    else{
+      setState(() {
+       isDownloadingVideo=true;
+     });
+      final youtube = YoutubeExplode();
+      final videoId = YoutubePlayer.convertUrlToId(videoUrl);
+      var manifest = await youtube.videos.streamsClient.getManifest(videoId);
+      var streamsAudio=manifest.audioOnly;
+      var audio=streamsAudio.first;
+      Uri audioStreamUrl = audio.url;
+
+      var streams= manifest.videoOnly;
+      var video = streams.first;
+      Uri videoStreamUrl = video.url;
+
+      final appDocumentsDir = await getExternalStorageDirectory();
+      videoFilePath='${appDocumentsDir?.path}/video$videoId.mp4';
+
+      // Generate and save SRT subtitles
+    final String subtitles = generateSRT(subtitleLines);
+    final String subtitleFilePath = '${appDocumentsDir?.path}/subtitles.srt';
+    await File(subtitleFilePath).writeAsString(subtitles);
+    final flutterFFmpeg = FlutterFFmpeg();
+    final int result = await flutterFFmpeg.execute('-i $videoStreamUrl -i $audioStreamUrl -i $subtitleFilePath -c:a copy -c:v copy $downloadPath');
+    // // Append subtitles to the downloaded video
+    if (result == 0) {
+      String downloadUrl = await uploadVideoToStorage(downloadPath, videoId!);
+      if(downloadUrl.isNotEmpty){
+        setState(() {
+          isDownloadingVideo=false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(videoDownloadMsg), backgroundColor: greenColor),);
+      }
+    } 
+    else {
+      // setState(() {
+      //   isDownloading=false;
+      // });
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(videoDownloadFailMsg), backgroundColor: primaryColor),);
+    }
+    }
+  }
+  //Download video with subtitles embedded end//
+
+  //Upload SRT file to firebase storage//
+Future<String> uploadVideoToStorage(String filePath, String videoId) async {
+  try {
+    Reference storageReference = FirebaseStorage.instance
+        .ref()
+        .child('video_files')
+        .child(videoId)
+        .child('video.mkv');
+
+    final metadata = SettableMetadata(contentType: 'video/mkv');
+    UploadTask uploadTask = storageReference.putFile(File(filePath), metadata);
+    TaskSnapshot taskSnapshot = await uploadTask;
+
+    if (taskSnapshot.state == TaskState.success) {
+      String downloadUrl = await taskSnapshot.ref.getDownloadURL();
+      return downloadUrl;
+    } else {
+      return ''; // Return an appropriate error message if needed
+    }
+  } catch (error) {
+    print('Error uploading video: $error');
+    return ''; // Return an appropriate error message if needed
+  }
+}
+  // //Upload SRT file to firebase storage end//
+ 
+
+  //Get color HexCode//
+  String getColorHexCode(Color color) {
+    return '#${color.value.toRadixString(16).padLeft(8, '0')}';
+  }
+  //Get color HexCode end//
+
+  //Get available font styles//
+  List<String> getAvailableFontStyles() {
+    return GoogleFonts.asMap().keys.toList();
+  }
+  //Get available font styles end//
+
+  // Save subtitle's textcolor and backgroundcolor//
+  void saveColorsToFirestore(Color txtcolor, Color bgcolor) {
+    CollectionReference usersCollection =FirebaseFirestore.instance.collection('colors_Subtitle');
+    String uid = _auth.currentUser!.uid;
+
+    String txtColorHex = '#${txtcolor.value.toRadixString(16).substring(2)}';
+    String bgColorHex = '#${bgcolor.value.toRadixString(16).substring(2)}';
+
+    usersCollection.doc(uid).get().then((docSnapshot) {
+      if (docSnapshot.exists) {
+        usersCollection.doc(email).update({
+          'textColor': txtColorHex,
+          'bgColor': bgColorHex,
+          'timeStamp': FieldValue.serverTimestamp(),
+          'fontStyle':selectedFontStyle,
+        }).then((_) {}).catchError((error) {});
+      } else {
+        usersCollection.doc(uid).set({
+          'timeStamp': FieldValue.serverTimestamp(),
+          'userId': uid,
+          'textColor': txtColorHex,
+          'bgColor': bgColorHex,
+          'fontStyle':selectedFontStyle,
+        }).then((_) {}).catchError((error) {});
+      }
+    }).catchError((error) {});
+  }
+  // Save subtitle's textcolor and backgroundcolor end//
+  
   @override
   Widget build(BuildContext context) {
     double width = MediaQuery.of(context).size.width;
@@ -1085,57 +1054,90 @@ List<String> getAvailableFontStyles() {
                 else if (value == 'Item 3') {}
               },
               itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-                //Profile Field//
+                //Profile field//
                 PopupMenuItem<String>(
                   padding: const EdgeInsets.only(left: 20, right: 50),
                   value: 'Item 1',
-                  child: RowWIthIconTextbuttonWidget(
-                    onPressed: () {
-                      showProfileSheet(context);
-                    },
-                    icon: Icons.person,
-                    text: profileString,
+                  child: Row(
+                    children: [
+                      // Icon(icon, color: primaryColor),
+                      CircleAvatar(
+                          radius:10, // Adjust the size of the circle as needed
+                          backgroundImage: NetworkImage(photo ?? ''),
+                        ),
+                      const SizedBox(width: 10),
+                      TextButton(
+                        onPressed: () {
+                          showProfileSheet(context);
+                        },
+                        child: const Text(profileString, style: TextStyle(color: primaryColor))),
+                    ],
                   ),
                 ),
-                //Logout Field//
+                //Logout field//
                 PopupMenuItem<String>(
                   padding: const EdgeInsets.only(left: 20, right: 50),
-                  value: 'Item 3',
+                  value: 'Item 2',
                   child: RowWIthIconTextbuttonWidget(
                     onPressed: () async {
                       showLogoutAlertDialog(context);
                       if (isVideoPlaying) {
                         controller?.pause();
+                        youtubeController!.pause();
                       }
                     },
                     icon: Icons.logout,
                     text: logoutString,
                   ),
                 ),
+                //Logout field end//
+                //Delete account field//
+                PopupMenuItem<String>(
+                  padding: const EdgeInsets.only(left: 20, right: 50),
+                  value: 'Item 3',
+                  child: RowWIthIconTextbuttonWidget(
+                    onPressed: () {
+                      if (isVideoPlaying) {
+                        controller?.pause();
+                        youtubeController!.pause();
+                      }
+                      showDeleteAccount(context);
+                    },
+                    icon: Icons.delete,
+                    text: deleteAccString,
+                  ),
+                ),
+                //Delete account field end//
               ],
             ),
           ],
         ),
-        body: Stack(children: [
+        body: Stack(
+          children: [
+              
           SingleChildScrollView(
             child: Padding(
               padding: const EdgeInsets.all(16.0),
-              child: Column(
+              child:Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  //Import Video Field Start//
+                  //Remaining time bar widget//
                   if (!isVideoExist || isVideoExist) RemainingTimeWidget(_auth.currentUser?.uid),
+                  //If video is not existing show this field//
                   if (!isVideoExist)
                     Container(
                       margin: EdgeInsets.only(top: width / 2.2),
                       child: Column(
                         children: [
-                          //Import Video Field//
+                          //Import local storage video field//
                           ElevatedButtonCircularWidget(
                             onPressed: () async {
                               isLocalStorageVideo = true;
                               getVideo();
-                              showLoadingPopup = true;
+                              setState(() {
+                                isVideoPlaying=false;
+                                showLoadingPopup=false;
+                              });
                             },
                             backgroundColor: primaryColor,
                             child: const RowWithIconTextWidget(
@@ -1143,11 +1145,11 @@ List<String> getAvailableFontStyles() {
                               icon: Icons.video_collection,iconSize: 20,iconColor: whiteColor,
                             ),
                           ),
-                          //Import Video Field End//
+                          //Import local storage video field end//
                           const SizedBox(height: 20),
-                          //Import Video URL Field//
+                          //Import youtube video URL field//
                           ElevatedButtonCircularWidget(
-                            onPressed: () async {
+                            onPressed: () {
                               showImportUrlSheet(context);
                             },
                             backgroundColor: primaryColor,
@@ -1156,13 +1158,12 @@ List<String> getAvailableFontStyles() {
                               icon: CupertinoIcons.link,iconSize: 20,iconColor: whiteColor,
                             ),
                           ),
-                          //
-                          //Import Video URL Field End//
+                          //Import youtube video URL field end//
                         ],
                       ),
                     ),
                   const SizedBox(height: 16.0),
-                  //Video Container Field Start//
+                  //If video existing show video container field//
                   if (isVideoExist)
                     Container(
                       width: width,
@@ -1179,10 +1180,12 @@ List<String> getAvailableFontStyles() {
                               child: Stack(
                                 alignment: Alignment.center,
                                 children: [
+                                  //If video is local storage video//
                                   if (isLocalStorageVideo)
                                   Stack(
                                     alignment: Alignment.center,
                                     children: [
+                                      //Video container//
                                       AspectRatio(
                                         aspectRatio: controller!.value.aspectRatio,
                                         child: Stack(
@@ -1195,7 +1198,8 @@ List<String> getAvailableFontStyles() {
                                               },
                                               child: VideoPlayer(controller!),
                                             ),
-                                            if (!isEditing)
+                                            //If subtitle is not editing show subtitles in video//
+                                            if (!isEditing && subtitles.isNotEmpty)
                                             Positioned(
                                               bottom: 10,
                                               left: 10,
@@ -1205,9 +1209,7 @@ List<String> getAvailableFontStyles() {
                                                 padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 8.0),
                                                 child: Text(
                                                   getSubtitleForCurrentPosition(controller!.value.position),
-                                                  style: 
-                                                  // TextStyle(color: userSelectedTextColor, fontSize: 14,fontFamily: selectedFontStyle),
-                                                  isSelectStyle?
+                                                  style: isSelectStyle?
                                                     GoogleFonts.getFont(
                                                           selectedFontStyle! ,
                                                           fontSize: 14,
@@ -1347,6 +1349,7 @@ List<String> getAvailableFontStyles() {
                                       ),
                                       ],
                                     )
+                                  //If video is youtube url video//
                                   else
                                     Stack(
                                     alignment: Alignment.center,
@@ -1373,7 +1376,6 @@ List<String> getAvailableFontStyles() {
                                                 onReady: () {
                                                   // You can disable controls here
                                                   youtubeController!.setPlaybackRate(1); // Set normal playback rate
-                                                  // youtubeController!.disableControls(); // Disable video controls
                                                 },
                                               ),
                                               Positioned.fill(
@@ -1391,7 +1393,7 @@ List<String> getAvailableFontStyles() {
                                       ])
                                             : const Center(child:CircularProgressIndicator(),),
                                       ),
-                                      if (!isEditing)
+                                      if (!isEditing && subtitles.isNotEmpty)
                                             Positioned(
                                               bottom: 10,
                                               left: 10,
@@ -1401,7 +1403,13 @@ List<String> getAvailableFontStyles() {
                                                 padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 8.0),
                                                 child: Text(
                                                   getSubtitleForCurrentPosition(youtubeController!.value.position),
-                                                  style: TextStyle(color: userSelectedTextColor, fontSize: 14,fontFamily: selectedFontStyle),
+                                                  style: isSelectStyle?
+                                                    GoogleFonts.getFont(
+                                                          selectedFontStyle! ,
+                                                          fontSize: 14,
+                                                          fontWeight: FontWeight.bold,
+                                                          color: userSelectedTextColor,
+                                                        ):  TextStyle(fontSize: 14,color: userSelectedTextColor)
                                                 ),
                                               ),
                                             ),
@@ -1667,8 +1675,8 @@ List<String> getAvailableFontStyles() {
                           const SizedBox(height: 10),
                           Column(
                             children: [
-                              if (isTranscribing)
-                                const Center(child: LoadingScreen())
+                              if (isGettingKey || isTranscribing)
+                                const Center(child: LoadingScreen(text: createSubtitlesLoadingMsg,textColor: primaryColor,))
                               else if (subtitles.isNotEmpty)
                                 if (isLocalStorageVideo)
                                   Container(
@@ -1715,7 +1723,7 @@ List<String> getAvailableFontStyles() {
                                                                       isVideoPlaying = true;
                                                                       controller?.play();
                                                                       isEditing=false;
-                                                                      Get.back();
+                                                                      // Get.back();
                                                                     });
                                                                 },
                                                                 icon:const Icon(Icons.check,color: whiteColor,)
@@ -1906,7 +1914,8 @@ List<String> getAvailableFontStyles() {
                                               ),
                                             )
                                             : const SizedBox(),
-                                            SizedBox(height: 10,),
+                                            const SizedBox(height: 10,),
+                                            
                               Container(
                                 margin: const EdgeInsets.only(left: 10),
                                 child: Column(
@@ -1923,13 +1932,14 @@ List<String> getAvailableFontStyles() {
                                         }, 
                                         child: Row(
                                           children: const [
-                                            Icon(Icons.delete,size: 20,color: primaryColor,),
+                                            Icon(Icons.close,size: 20,color: primaryColor,),
                                             SizedBox(width: 5,),
-                                            Text('Discard',style:TextStyle(color: primaryColor)),
+                                            Text(discardString,style:TextStyle(color: primaryColor)),
                                           ],
                                         )
                                       ),
                                     ),
+                                    const SizedBox(height:10),
                                     if(subtitles.isNotEmpty)
                                     Container(
                                       height: 40,
@@ -1939,7 +1949,11 @@ List<String> getAvailableFontStyles() {
                                       ),
                                       child: TextButton(
                                         onPressed: (){
-                                           downloadSRTFile();
+                                          if (isVideoPlaying) {
+                                            controller?.pause();
+                                            youtubeController!.pause();
+                                          }
+                                          downloadSRTFile();
                                         }, 
                                         child: Row(
                                           children: const [
@@ -1950,26 +1964,31 @@ List<String> getAvailableFontStyles() {
                                         )
                                       ),
                                     ),
+                                    const SizedBox(height:10),
                                     if(subtitles.isNotEmpty)
-                                    Container(
-                                      height: 40,
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(10),
-                                        border: Border.all(color: primaryColor),
+                                       Container(
+                                        height: 40,
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(10),
+                                          border: Border.all(color: primaryColor),
+                                        ),
+                                        child: TextButton(
+                                          onPressed:(){
+                                            if (isVideoPlaying) {
+                                              controller?.pause();
+                                            }
+                                            downloadVideoWithSubtitles(context);
+                                          }, 
+                                          child: Row(
+                                            children:   const [
+                                              Icon(Icons.download,size: 20,color: primaryColor,),
+                                              SizedBox(width: 5,),
+                                              
+                                              Text('Download with subtitle',style:TextStyle(color: primaryColor)),
+                                            ],
+                                          )
+                                        ),
                                       ),
-                                      child: TextButton(
-                                        onPressed: (){
-                                          downloadVideoWithSubtitles();
-                                        }, 
-                                        child: Row(
-                                          children: const [
-                                            Icon(Icons.download,size: 20,color: primaryColor,),
-                                            SizedBox(width: 5,),
-                                            Text('Download with subtitle',style:TextStyle(color: primaryColor)),
-                                          ],
-                                        )
-                                      ),
-                                    )
                                   ],
                                 ),
                               ),
@@ -1996,15 +2015,31 @@ List<String> getAvailableFontStyles() {
                     content: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: const <Widget>[
-                        Text(loadingMsg, textAlign: TextAlign.center),
-                        SizedBox(height: 20),
-                        CircularProgressIndicator(),
+                        // Text(loadingMsg, textAlign: TextAlign.center),
+                        // SizedBox(height: 20),
+                        LoadingScreen(text: loadingMsg,textColor: primaryColor,),
                       ],
                     ),
                   ),
                 ),
               ),
             ),
+            if(isDownloadingVideo)
+              Container(
+                color: Colors.black.withOpacity(0.5), // Semi-transparent background color
+                child: Container(
+                  alignment: Alignment.center,
+                  margin: EdgeInsets.only(top: height/2.5),
+                  child: const LoadingScreen(text: 'Downloading....',textColor: whiteColor,)),
+              ),
+            if(isDownloadingSrt)
+              Container(
+                color: Colors.black.withOpacity(0.5), // Semi-transparent background color
+                child: Container(
+                  alignment: Alignment.center,
+                  margin: EdgeInsets.only(top: height/2.5),
+                  child: const LoadingScreen(text: 'Downloading....',textColor: whiteColor,)),
+              )
         ]),
       ),
     );

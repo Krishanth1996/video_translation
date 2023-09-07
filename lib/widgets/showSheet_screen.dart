@@ -6,6 +6,8 @@ import 'package:video_subtitle_translator/widgets/widgets.dart';
 import '../constants.dart';
 import '../login.dart';
 
+
+
 Future<void> showLogoutAlertDialog(BuildContext context) async {
   return showDialog<void>(
     context: context,
@@ -73,6 +75,8 @@ void showLimitAlert(BuildContext context) {
   );
 }
 
+bool isVideoPlaying=false;
+
 void showDeleteAccount(BuildContext context) async {
   AuthService authService = AuthService();
   await authService.initAuthService();
@@ -106,7 +110,7 @@ void showDeleteAccount(BuildContext context) async {
                 ),
                 onPressed: () async {
                   await authService.deleteAccount();
-                  Get.snackbar('Your Account Deleted', 'Successfully',colorText: primaryColor);
+                  Get.snackbar('Your Account Deleted', 'Successfully',backgroundColor: redColor.withOpacity(0.2),snackPosition: SnackPosition.TOP,titleText: const Text('Your Account Deleted', style: TextStyle(color: redColor)));
                 },
               ),
             ],
@@ -122,6 +126,7 @@ void showProfileSheet(BuildContext context) async {
   await authService.initAuthService();
   String displayName = await authService.getDisplayName();
   String email = await authService.getEmail();
+
   // String phone = await authService.getUpdatePhoneNo();
   String phoneNo = await authService.getPhoneNo();
   bool? isGoogleLogin = await authService.getGoogleLogin();
@@ -132,7 +137,7 @@ void showProfileSheet(BuildContext context) async {
     isDismissible: false,
     builder: (BuildContext context) {
       double width = MediaQuery.of(context).size.width;
-    double height = MediaQuery.of(context).size.height;
+      double height = MediaQuery.of(context).size.height;
       return Container(
         height: MediaQuery.of(context).size.height * 0.4,
         width: MediaQuery.of(context).size.width * 0.9,
@@ -148,6 +153,10 @@ void showProfileSheet(BuildContext context) async {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
+                        // CircleAvatar(
+                        //   radius:20, // Adjust the size of the circle as needed
+                        //   backgroundImage: NetworkImage(photo ?? ''),
+                        // ),
                         const Text(userProfileString,
                             style: TextStyle(
                                 fontSize: 22,
@@ -194,19 +203,7 @@ void showProfileSheet(BuildContext context) async {
                     //     ),
                     //   ],
                     // ),
-
                     const SizedBox(height: 10),
-                    Align(
-                        alignment: Alignment.center,
-                        child: ElevatedButton(
-                            onPressed: () async {
-                              showDeleteAccount(context);
-                            },
-                            style: ElevatedButton.styleFrom(backgroundColor: primaryColor),
-                            child: 
-                                const Text(deleteAccString),
-                              )),
-                        // 
                   ],
                 ),
               if (isGoogleLogin == false)

@@ -1,10 +1,18 @@
-//Images//
 import 'package:flutter/material.dart';
 import 'package:video_subtitle_translator/colors.dart';
 
+//Images//
 const String googleImg = "assets/googlecolor.png";
 const String logoImg = "assets/logo.png";
 const String importImg = "assets/import.png";
+//Web//
+const String webbgimg = "assets/loginpageimg_1-transformed.png";
+const String privacystring = 'Privacy Policy';
+const String termsstring = 'Terms of Use - ';
+const String footernamestring = 'Video - Subtitle - Generator';
+const String findusonstring = 'Find us on';
+const String kelaxastring = '2023 Kelaxa';
+const String sureMsg = "Are you sure!";
 
 //Text//
 const String appNameString = "Video Translator";
@@ -37,22 +45,19 @@ const String okString = "Ok";
 const String nextString = "Next";
 const String enterNumberString = "Enter your phone number";
 const String enterEmailString = "Enter your email address";
-const String exampleNoString = "(eg:+94771234567)";
 
 //Messages//
 const String importVideoUrlMsg = "Import your video URL";
 const String subtitleCreateSuccessMsg = "Successfully created subtitles";
-const String srtFileCreateSuccessMsg = "Your SRT file successfully downloaded";
-const String srtFileCreateFailMsg = "Error occured in downloading SRT file:";
+const String srtFileCreateSuccessMsg = "SRT file successfully downloaded";
+const String srtFileCreateFailMsg = "Error occured in downloading SRT file";
 const String signInSuccessMsg = "Logged In!";
 const String selectVideoMsg = "Please select a video first";
 const String emptyMsg = "Empty";
 const String nameEmptyMsg = "Name is Empty";
 const String askLogoutMsg = "Are you sure you want to logout?";
-const String loadingMsg =
-    "Do not close this page, we are importing the video from your device!..";
-const String select60MVideMsg =
-    "Please select a video with 60 seconds or less.";
+const String loadingMsg ="Do not close this page, we are importing the video from your device!..";
+const String select60MVideMsg ="Please select a video with 60 seconds or less.";
 const String noEmailMsg = "Email is not available";
 const String noNameMsg = "Name is not available";
 const String noNumberMsg = "Phone Number is not available";
@@ -65,8 +70,18 @@ const String enterFieldsMsg = "You should enter this required field";
 const String thankyouMsg = "Thank You";
 const String sorryMsg = "Sorry!";
 const String phoneNoUpdateSuccessMsg = "Phone Number Successfully Updated";
-const String audioExtractFailMsg = "Audio Extraction Failed";
+const String notAbleCreateSubtitleMsg = "Unable to create subtitles";
 const String confirmRemoveMsg = "Are you sure you want to remove this item?";
+const String invalidUrlMsg = "Invalid YouTube URL";
+const String enterUrlMsg = "Please enter a valid YouTube URL";
+const String videoDownloadMsg = "Video Downloaded";
+const String videoDownloadFailMsg = "Video Downloading failed";
+const String createSubtitlesLoadingMsg = "Creating Subtitles...";
+const String codeIncorrectMsg ='Verification code in incorrect';
+const String tryAgainMsg ='Please try again';
+
+
+
 
 
 BoxDecoration boxDecoration = BoxDecoration(

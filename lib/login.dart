@@ -128,9 +128,7 @@ class _LoginState extends State<Login> {
                                   BorderRadius.all(Radius.circular(20))),
                           padding: const EdgeInsets.all(15)),
                       onPressed: () async {
-                        authService
-                            .verifyPhoneNumber(phoneNoController.text.trim());
-
+                         authService.verifyPhoneNumber(phoneNoController.text.trim());
                       },
                       child: const Text(loginString,
                           style: TextStyle(fontSize: 20)),
@@ -153,7 +151,7 @@ class _LoginState extends State<Login> {
                         });
                         AuthService authService = AuthService();
                         await authService.initAuthService();
-                        User? user = await AuthService().signInWithGoogle(phoneController.text);
+                        User? user = await AuthService().signInWithGoogle();
 
                         setState(() async {
                           isLoading = false; // Stop loading
